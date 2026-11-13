@@ -1,6 +1,8 @@
 import { useEffect } from "react";
 import { useGame } from "@/game/store";
-import { Create, MatchDay, Press, ReportView, Sacked, SeasonView, Title } from "./flows";
+import { MatchDay, Press, ReportView, Sacked, SeasonView, Title } from "./flows";
+import { NewsOverlay } from "./fc/news";
+import { CreateWizard } from "./fc/wizard";
 import { Hub } from "./Hub";
 
 export function Game() {
@@ -22,13 +24,14 @@ export function Game() {
   return (
     <div className="app-bg min-h-dvh">
       {phase === "title" && <Title />}
-      {phase === "create" && <Create />}
+      {phase === "create" && <CreateWizard />}
       {phase === "press" && <Press />}
       {phase === "match" && <MatchDay />}
       {phase === "report" && <ReportView />}
       {phase === "season" && <SeasonView />}
       {phase === "sacked" && <Sacked />}
       {phase === "hub" && <Hub />}
+      {(phase === "hub" || phase === "season") && <NewsOverlay />}
     </div>
   );
 }

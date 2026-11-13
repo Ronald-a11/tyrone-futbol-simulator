@@ -45,6 +45,7 @@ import {
   makeManagerPool,
   outletCrowdCap,
   outletProfitPerSale,
+  buildSeasonOpenNews,
   pushForm,
   refreshHappiness,
   transferCap,
@@ -84,9 +85,20 @@ export function blankSave(): SaveData {
     training: "technical",
     facilities: { stadium: 1, training: 1, academy: 1, medical: 1 },
     stands: { west: 1, east: 1, north: 0, south: 0 },
-    staff: { coach: 2, scout: 1, physio: 1 },
+    staff: { coach: 2, scout: 1, physio: 1, assistant: 0 },
     sponsorName: "Harbor Grain",
     sponsorBoost: 1,
+    sponsorUntil: 3,
+    ticketPrice: 5,
+    winBonusPct: 20,
+    chairmanAvatar: 0,
+    kitId: 0,
+    rivalClubId: "",
+    stadiumName: "The Pits",
+    feesPaid: 0,
+    feesReceived: 0,
+    managersHired: 1,
+    newsQueue: [],
     clubs: [],
     players: [],
     weeks: [],
@@ -152,6 +164,17 @@ export function normalize(raw: SaveData): SaveData {
     seasonProfit: raw.seasonProfit ?? 0,
     fanMgrHappy: raw.fanMgrHappy ?? 75,
     fanChairHappy: raw.fanChairHappy ?? raw.fans ?? 55,
+    sponsorUntil: raw.sponsorUntil ?? raw.season + 2,
+    ticketPrice: raw.ticketPrice ?? 5,
+    winBonusPct: raw.winBonusPct ?? 20,
+    chairmanAvatar: raw.chairmanAvatar ?? 0,
+    kitId: raw.kitId ?? 0,
+    rivalClubId: raw.rivalClubId ?? "",
+    stadiumName: raw.stadiumName ?? raw.clubs?.find((c) => c.id === USER)?.stadium ?? "The Pits",
+    feesPaid: raw.feesPaid ?? 0,
+    feesReceived: raw.feesReceived ?? 0,
+    managersHired: raw.managersHired ?? 1,
+    newsQueue: raw.newsQueue ?? [],
     screen: screenMap[rawScreen] ?? (raw.screen as SaveData["screen"]) ?? "dash",
     version: 4,
     active: true,
@@ -291,6 +314,7 @@ function buildSquad(seed: number, club: Club, used: Set<string>, boost = 0): Pla
 export function createGame(input: CreateInput): SaveData {
   const seed = Math.floor(Math.random() * 1_000_000_000) || 7;
   const used = new Set<string>();
+  const stadiumName = input.stadiumName.trim() || "The Pits";
   const userClub: Club = {
     id: USER,
     name: input.clubName.trim(),
@@ -298,7 +322,7 @@ export function createGame(input: CreateInput): SaveData {
     city: input.city.trim(),
     primary: input.primary,
     secondary: input.secondary,
-    stadium: `${input.city.trim()} Park`,
+    stadium: stadiumName,
     reputation: 56,
     style: input.philosophy,
   };
@@ -327,7 +351,6 @@ export function createGame(input: CreateInput): SaveData {
     players = players.map((p) => (p.id === kid.id ? { ...p, pot: clamp(ovr(p) + 14, ovr(p), 92), age: Math.min(p.age, 18) } : p));
   }
   const weeks = buildWeeks(clubs.map((c) => c.id), seed);
-  const xiPick = pickXi(players, USER, input.formation);
   const withMarket = players.concat(
     makeMarket({
       ...blankSave(),
@@ -342,7 +365,17 @@ export function createGame(input: CreateInput): SaveData {
     .filter((p) => p.clubId === USER)
     .sort((a, b) => ovr(b) + b.age / 10 - (ovr(a) + a.age / 10))[0];
   const base = blankSave();
-  const mgr = defaultManager(seed, input.philosophy, input.formation);
+  const mgr = {
+    ...input.manager,
+    hiredSeason: 1,
+    hiredWeek: 0,
+    played: 0,
+    won: 0,
+    drawn: 0,
+    lost: 0,
+    happiness: 82,
+  };
+  const xiFromMgr = pickXi(players, USER, mgr.formation);
   const save: SaveData = {
     ...base,
     seed,
@@ -351,6 +384,10 @@ export function createGame(input: CreateInput): SaveData {
     screen: "dash",
     managerName: mgr.name,
     chairmanName: input.managerName.trim() || "Tyrone",
+    chairmanAvatar: input.chairmanAvatar,
+    kitId: input.kitId,
+    rivalClubId: input.rivalClubId || ais[0]?.id || "",
+    stadiumName,
     tier: 3,
     season: 1,
     cash: 2_400_000,
@@ -359,19 +396,25 @@ export function createGame(input: CreateInput): SaveData {
     fans: 58,
     fanMgrHappy: 85,
     fanChairHappy: 58,
-    philosophy: input.philosophy,
-    formation: input.formation,
-    line: input.philosophy === "counter" ? "deep" : input.philosophy === "press" || input.philosophy === "possession" ? "high" : "standard",
-    build: input.philosophy === "possession" ? "short" : input.philosophy === "direct" || input.philosophy === "counter" ? "direct" : "mixed",
+    philosophy: mgr.style,
+    formation: mgr.formation,
+    line: mgr.style === "counter" ? "deep" : mgr.style === "press" || mgr.style === "possession" ? "high" : "standard",
+    build: mgr.style === "possession" ? "short" : mgr.style === "direct" || mgr.style === "counter" ? "direct" : "mixed",
     clubs,
     players,
     weeks,
-    xi: xiPick.xi,
-    bench: xiPick.bench,
+    xi: xiFromMgr.xi,
+    bench: xiFromMgr.bench,
     sponsorName: "Harbor Grain",
     sponsorBoost: 1,
+    sponsorUntil: 3,
+    ticketPrice: 5,
+    winBonusPct: 20,
+    feesPaid: 0,
+    feesReceived: 0,
+    managersHired: 1,
     objective: objectiveText(3),
-    manager: { ...mgr, hiredSeason: 1, hiredWeek: 0 },
+    manager: mgr,
     managerPool: makeManagerPool(seed, mgr.name),
     transferBudgetMode: "normal",
     outlets: { burger: 1, counter: 0, cafe: 0, merch: 0 },
@@ -382,6 +425,7 @@ export function createGame(input: CreateInput): SaveData {
     trophies: [],
     records: emptyRecords(),
     seasonProfit: 0,
+    newsQueue: [],
     inbox: [
       {
         id: "welcome",
@@ -401,7 +445,20 @@ export function createGame(input: CreateInput): SaveData {
       },
     ],
   };
-  return save;
+  const open = buildSeasonOpenNews(save);
+  return {
+    ...save,
+    newsQueue: [
+      {
+        id: `appointed-${mgr.name}`,
+        kind: "continue" as const,
+        title: "New manager appointed",
+        body: `${mgr.name} is on a rolling contract at ${userClub.name}. Severance is twelve months' wages (£${(mgr.wage * 52).toLocaleString("en-GB")}) if you sack him.`,
+        cta: "Continue",
+      },
+      ...open,
+    ],
+  };
 }
 
 export function clubOf(state: SaveData, id: string) {
@@ -527,7 +584,7 @@ export function crowd(state: SaveData) {
   const boxOcc = clamp(occ + 0.12, 0.55, 0.98);
   const standard = Math.max(0, facts.seats - facts.boxes);
   const attendance = Math.round(standard * occ + facts.boxes * boxOcc);
-  const ticket = ticketPrice(state.tier);
+  const ticket = state.ticketPrice ?? ticketPrice(state.tier);
   const box = boxPrice(state.tier);
   const gate = Math.round(standard * occ * ticket + facts.boxes * boxOcc * box);
   return { cap: facts.seats, boxes: facts.boxes, attendance, gate, occ, boxOcc, ticket, box, standard };
@@ -680,6 +737,7 @@ export function resolveWeek(state: SaveData, live: ReturnType<typeof createLive>
   const broadcast = broadcastWeekly(state);
   const interest = Math.round(debt * OVERDRAFT_RATE);
   let gate = 0;
+  const bonusPct = state.winBonusPct ?? 20;
 
   if (userLive && (userLive.homeId === USER || userLive.awayId === USER)) {
     const home = userLive.homeId === USER;
@@ -687,6 +745,7 @@ export function resolveWeek(state: SaveData, live: ReturnType<typeof createLive>
     const ga = home ? userLive.awayScore : userLive.homeScore;
     const win = gf > ga;
     const draw = gf === ga;
+    const winBonusPay = win ? Math.round(wages * (bonusPct / 100)) : 0;
     if (userLive.competition === "league") {
       boardDelta += win ? 4 : draw ? 1 : -4;
       fanDelta += win ? 3 : draw ? 0 : -2;
@@ -721,7 +780,8 @@ export function resolveWeek(state: SaveData, live: ReturnType<typeof createLive>
       );
     }
     const bonus = win ? (state.tier === 1 ? 80000 : state.tier === 2 ? 40000 : 22000) : draw ? 8000 : 0;
-    cash += gate + sponsor + broadcast + bonus - wages - interest;
+    cash += gate + sponsor + broadcast + bonus - wages - winBonusPay - interest;
+    if (winBonusPay > 0) notes.push(`Win bonus paid: ${winBonusPay.toLocaleString("en-GB")} (${bonusPct}%).`);
 
     const sideIds = new Set(home ? userLive.homeXi : userLive.awayXi);
     const minutesOf = (id: string) => {
@@ -1271,7 +1331,7 @@ export function openNextSeason(state: SaveData): SaveData {
       body: intakes.map((p) => `${p.name}, ${p.pos}, potential ${p.pot}`).join(". ") + ".",
     });
   }
-  return {
+  const nextBase: SaveData = {
     ...state,
     tier,
     season: state.season + 1,
@@ -1295,7 +1355,9 @@ export function openNextSeason(state: SaveData): SaveData {
     sponsorName,
     sponsorBoost: clamp(0.9 + (review && review.pos <= 3 ? 0.15 : 0), 0.85, 1.25),
     fans: clamp(state.fans + (move === "up" ? 6 : move === "down" ? -6 : 0), 10, 99),
+    form: "",
   };
+  return { ...nextBase, newsQueue: buildSeasonOpenNews(nextBase) };
 }
 
 export function beginLive(state: SaveData, tone: "bold" | "measured" | "deflect") {

@@ -9,13 +9,21 @@ export function FcShell({ children, footer }: { children: ReactNode; footer?: Re
   );
 }
 
-export function FcHeader({ title }: { title: string }) {
+export function FcHeader({
+  title,
+  onSettings,
+  onHelp,
+}: {
+  title: string;
+  onSettings?: () => void;
+  onHelp?: () => void;
+}) {
   return (
     <header className="fc-header safe-top flex shrink-0 items-center justify-between gap-2 px-2 pb-2 pt-1">
       <div className="flex w-14 items-center gap-1.5 text-white/90">
-        <span className="text-sm font-bold" aria-hidden>
+        <button type="button" className="text-sm font-bold" aria-label="Help" onClick={onHelp}>
           ?
-        </span>
+        </button>
         <span className="text-sm" aria-hidden>
           ✓
         </span>
@@ -27,9 +35,9 @@ export function FcHeader({ title }: { title: string }) {
         <span className="text-sm" aria-hidden>
           ⌕
         </span>
-        <span className="text-sm" aria-hidden>
+        <button type="button" className="text-sm" aria-label="Settings" onClick={onSettings}>
           ⚙
-        </span>
+        </button>
       </div>
     </header>
   );

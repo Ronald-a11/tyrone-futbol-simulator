@@ -2,12 +2,15 @@ import { useMemo, useState, type ReactNode } from "react";
 import { STAND_IDS, STANDS, TIER_META, standFacts, standsOf } from "@/game/data";
 import {
   ACHIEVEMENT_DEFS,
+  CHAIRMAN_AVATARS,
   SUPER_STADIUM_COST,
   budgetLabel,
   facilityStepCost,
   outletCrowdCap,
   outletProfitPerSale,
   outletUpgradeCost,
+  makeManagerPool,
+  seasonMonthLabel,
   transferCap,
   weeklyFacilityCost,
 } from "@/game/fc";
@@ -36,7 +39,6 @@ import {
   FcShell,
   FcTile,
   FormDots,
-  HappyBar,
   MoneyBag,
   PitchMark,
   formatMoney,
@@ -85,6 +87,11 @@ export function Hub() {
       {screen === "settings" && <Settings />}
       {screen === "medical" && <Medical />}
       {screen === "rivals" && <Rivals />}
+      {screen === "history" && <HistoryScreen />}
+      {screen === "finHistory" && <FinHistory />}
+      {screen === "clubList" && <ClubList />}
+      {screen === "highscores" && <Highscores />}
+      {screen === "about" && <About />}
     </div>
   );
 }
@@ -117,19 +124,20 @@ function Dashboard() {
       ]
     : [{ label: week ? "Advance week" : "Season break", onClick: advanceBye, primary: true }];
 
+  const month = seasonMonthLabel(state.weekIndex);
   return (
     <FcShell footer={<FcFooter buttons={footer} />}>
-      <FcHeader title="Football Chairman" />
+      <FcHeader title="Football Chairman" onSettings={() => go("settings")} onHelp={() => go("about")} />
       <div className="flex flex-1 flex-col gap-2 px-3 pb-3 pt-2">
         <div className="mx-auto mt-1 max-w-[90%] rounded-sm bg-white px-4 py-1 text-center font-display text-lg font-bold tracking-wide text-[var(--color-fc-navy)] uppercase shadow">
           {club?.name ?? "Club"}
         </div>
         <div className="flex items-center justify-center gap-2 text-xs text-white">
-          <span>S{state.season}</span>
+          <span>{month} {2025 + state.season}</span>
           <span className="rounded-full bg-sky-300/90 px-3 py-0.5 font-bold text-[var(--color-fc-navy)]">
             {TIER_META[state.tier].name}
           </span>
-          <span>W{state.weekIndex + 1}</span>
+          <span>Wk {state.weekIndex}</span>
         </div>
         <div className="grid grid-cols-4 gap-2">
           <FcTile label="Weekend" value={state.weekIndex} tone="white" onClick={() => go("fixtures")} />
@@ -144,13 +152,10 @@ function Dashboard() {
           <FcTile label="Records" tone="green" onClick={() => go("records")}>
             <span className="text-lg">🏅</span>
           </FcTile>
-          <FcTile label="Inbox" value={state.inbox.length} tone="green" onClick={() => go("inbox")} />
-          <FcTile
-            label="Fans happy?"
-            tone="lime"
-            wide
-            onClick={() => go("fans")}
-          >
+          <FcTile label="History" tone="green" onClick={() => go("history")}>
+            <span className="text-lg">📈</span>
+          </FcTile>
+          <FcTile label="Fans happy?" tone="lime" wide onClick={() => go("fans")}>
             <div className="mt-1 flex w-full justify-around text-xs font-bold">
               <span>{state.fanMgrHappy}% Mgr</span>
               <span>{state.fanChairHappy}% Chair</span>
@@ -159,18 +164,26 @@ function Dashboard() {
           <FcTile label="Stadium" tone="lime" onClick={() => go("stadium")}>
             <span className="text-lg">⚽</span>
           </FcTile>
-          <FcTile label="Board" value={`${state.board}%`} tone="lime" onClick={() => go("career")} />
-          <FcTile label="Medical" value={state.facilities.medical * 20} tone="navy" onClick={() => go("medical")} />
-          <FcTile label="Settings" tone="white" onClick={() => go("settings")}>
-            <span className="text-lg">⚙</span>
+          <FcTile label="Chairman" tone="lime" onClick={() => go("career")}>
+            <span className="text-lg">{CHAIRMAN_AVATARS[state.chairmanAvatar] ?? "👔"}</span>
           </FcTile>
+        </div>
+        <div className="flex justify-center gap-1.5 py-1">
+          {Array.from({ length: 10 }, (_, i) => (
+            <span
+              key={i}
+              className={`flex h-6 w-6 items-center justify-center rounded-sm border text-[0.65rem] ${i < state.trophies.length ? "border-[var(--color-fc-lime)] bg-[var(--color-fc-lime)]/30" : "border-white/40 bg-white/10"}`}
+            >
+              {state.trophies[i] ? "🏆" : ""}
+            </span>
+          ))}
         </div>
         <FormDots form={state.form} />
         {week ? (
           <p className="text-center text-xs text-white/85">
             {week.label}
-            {state.userCup === "winner" ? " · Shield holders" : state.userCup === "out" ? " · Out of Shield" : ""}
             {state.offer ? " · Bid waiting" : ""}
+            {state.inbox.length ? ` · Mail ${state.inbox.length}` : ""}
           </p>
         ) : null}
       </div>
@@ -182,6 +195,8 @@ function Finances() {
   const state = useGame();
   const books = ledger(state);
   const wages = wageBill(state);
+  const bonusPct = state.winBonusPct ?? 20;
+  const recommended = Math.round((books.seasonIn * 0.7) / SEASON_WEEKS_SAFE);
   return (
     <FcShell
       footer={
@@ -189,12 +204,12 @@ function Finances() {
           buttons={[
             { label: "Back", onClick: () => go("dash") },
             { label: "Transfers", onClick: () => go("market") },
-            { label: "Budget", onClick: () => go("budget") },
+            { label: "History", onClick: () => go("finHistory") },
           ]}
         />
       }
     >
-      <FcHeader title="Finances" />
+      <FcHeader title="Finances" onSettings={() => go("settings")} />
       <div className="flex flex-1 flex-col gap-3 px-3 py-3">
         <FcCard>
           <div className="flex items-center gap-3">
@@ -209,24 +224,23 @@ function Finances() {
           </div>
           <dl className="mt-4 grid gap-1.5 text-sm">
             <Row k="Current wages" v={formatMoney(wages)} />
-            <Row k="Wages + win bonus (20%)" v={formatMoney(Math.round(wages * 1.2))} muted />
-            <Row k="TV / wk" v={formatMoney(books.tv)} />
-            <Row k="Shirt + outlets / wk" v={formatMoney(books.shirt)} />
-            <Row k="Interest / wk" v={formatMoney(books.interest)} />
-            <Row k="Sponsor" v={`${state.sponsorName} · ${formatMoney(books.shirt)}`} />
+            <Row k={`Wages + win bonus (${bonusPct}%)`} v={formatMoney(Math.round(wages * (1 + bonusPct / 100)))} muted />
+            <Row k="Recommended max wages" v={formatMoney(recommended)} />
+            <Row k="Ticket price" v={`£${state.ticketPrice ?? 5}`} />
+            <Row k="Sponsor" v={`${state.sponsorName} · until S${state.sponsorUntil ?? state.season + 1}`} />
             <Row k="Profit/Loss this year" v={<MoneyBag n={state.seasonProfit} />} />
-            <Row k="Board confidence" v={`${state.board}%`} />
           </dl>
           <div className="mt-4 font-bold">Want more money?</div>
+          <p className="text-xs text-black/60">Boost finances with investment — borrow, or open the transfer budget.</p>
           <div className="mt-2 grid gap-2">
             <FcBtn className="w-full" kind="white" onClick={() => useGame.getState().takeLoan()}>
               Borrow on the overdraft
             </FcBtn>
-            <FcBtn className="w-full" kind="lime" disabled={state.debt <= 0} onClick={() => useGame.getState().payDebt()}>
-              Repay debt
+            <FcBtn className="w-full" kind="lime" onClick={() => go("budget")}>
+              Set transfer budget
             </FcBtn>
-            <FcBtn className="w-full" kind="white" onClick={() => useGame.getState().newSponsor()}>
-              Renegotiate sponsor
+            <FcBtn className="w-full" kind="white" disabled={state.debt <= 0} onClick={() => useGame.getState().payDebt()}>
+              Repay debt
             </FcBtn>
           </div>
         </FcCard>
@@ -234,6 +248,8 @@ function Finances() {
     </FcShell>
   );
 }
+
+const SEASON_WEEKS_SAFE = 17;
 
 function Budget() {
   const mode = useGame((s) => s.transferBudgetMode);
@@ -245,13 +261,13 @@ function Budget() {
       footer={
         <FcFooter
           buttons={[
-            { label: "Done", onClick: () => go("dash"), primary: true },
-            { label: "Finances", onClick: () => go("finances") },
+            { label: "Set Transfer Budget", onClick: () => go("finances"), primary: true },
+            { label: "Cancel", onClick: () => go("finances") },
           ]}
         />
       }
     >
-      <FcHeader title="Football Chairman" />
+      <FcHeader title="Set Transfer Budget" />
       <div className="px-3 py-3">
         <FcCard>
           <div className="font-display text-xl font-bold uppercase">Set transfer budget</div>
@@ -291,9 +307,9 @@ function Fans() {
       <div className="px-3 py-3">
         <FcCard>
           <div className="font-display text-sm font-bold uppercase text-black/70">Happiness & expectations</div>
-          <div className="mt-3 grid gap-3">
-            <HappyBar pct={state.fanMgrHappy} label="Happy with Manager" />
-            <HappyBar pct={state.fanChairHappy} label="Happy with Chairman" />
+          <div className="mt-3 grid gap-4">
+            <PersonHappyRow pct={state.fanMgrHappy} label="Happy with Manager" />
+            <PersonHappyRow pct={state.fanChairHappy} label="Happy with Chairman" />
           </div>
           <ul className="mt-4 list-disc space-y-1 pl-4 text-sm">
             <li>
@@ -302,9 +318,17 @@ function Fans() {
             <li>
               Atmosphere: Generally <strong>{state.fans >= 70 ? "loud" : state.fans >= 45 ? "steady" : "quiet"}</strong>.
             </li>
+            <li>
+              Tickets: <strong>£{state.ticketPrice ?? 5}</strong>
+            </li>
           </ul>
           <div className="mt-5 font-display text-sm font-bold uppercase text-black/70">Worldwide popularity</div>
-          <div className="mt-2 font-display text-3xl font-bold">{Math.min(10, Math.floor(state.fans / 10))} / 10</div>
+          <div className="mt-2 flex items-end gap-3">
+            <div className="text-4xl" aria-hidden>
+              🌍
+            </div>
+            <div className="font-display text-3xl font-bold">{Math.min(10, Math.floor(state.fans / 10))} / 10</div>
+          </div>
           <p className="mt-2 text-sm text-black/70">
             Popularity rises with trophies, star signings and big nights. Higher fame means more merchandise cash.
           </p>
@@ -314,11 +338,35 @@ function Fans() {
   );
 }
 
+function PersonHappyRow({ pct, label }: { pct: number; label: string }) {
+  const n = Math.round(Math.max(0, Math.min(100, pct)) / 10);
+  return (
+    <div>
+      <div className="mb-1 text-xs font-bold text-black/60">{label}</div>
+      <div className="flex items-center gap-2">
+        <div className="flex flex-1 justify-between gap-0.5">
+          {Array.from({ length: 10 }, (_, i) => (
+            <span
+              key={i}
+              className={`flex h-7 w-5 items-center justify-center rounded-sm text-sm ${i < n ? "bg-[#3E7D32] text-white" : "bg-[#a50e0e] text-white/90"}`}
+              aria-hidden
+            >
+              👤
+            </span>
+          ))}
+        </div>
+        <div className="w-12 text-right font-display text-lg font-bold text-[#3E7D32] tabular-nums">{Math.round(pct)}%</div>
+      </div>
+    </div>
+  );
+}
+
 function StadiumPits() {
   const state = useGame();
   const stands = standsOf(state);
   const facts = standFacts(stands);
   const club = userClub(state);
+  const [buildMode, setBuildMode] = useState(false);
   return (
     <FcShell
       footer={
@@ -331,52 +379,61 @@ function StadiumPits() {
         />
       }
     >
-      <FcHeader title={club?.stadium ?? "The Pits"} />
+      <FcHeader title={state.stadiumName || club?.stadium || "The Pits"} onSettings={() => go("settings")} />
       <div className="px-3 py-2">
         <PitchMark />
         <FcCard>
+          <div className="mb-2 flex items-center justify-between">
+            <div className="text-xs font-bold tracking-wide text-black/50 uppercase">
+              <span className="mr-4">Built</span>
+              <span>Capacity</span>
+            </div>
+            <FcBtn kind={buildMode ? "lime" : "white"} className="min-h-8 px-2 text-[0.65rem]" onClick={() => setBuildMode((b) => !b)}>
+              {buildMode ? "Done" : "Build"}
+            </FcBtn>
+          </div>
           <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs uppercase text-black/50">
-                <th className="py-1">Stand</th>
-                <th>Built</th>
-                <th className="text-right">Capacity</th>
-              </tr>
-            </thead>
             <tbody>
               {STAND_IDS.map((id) => {
                 const tier = stands[id];
                 const seats = STANDS[id].seats[tier] ?? 0;
                 return (
                   <tr key={id} className="border-t border-black/10">
-                    <td className="py-2 font-medium">{STANDS[id].name}</td>
-                    <td>{2025 + state.season + tier}</td>
+                    <td className="py-2">
+                      <span className="inline-block rounded-md bg-white px-2 py-1 font-medium shadow-sm">{STANDS[id].name}</span>
+                    </td>
+                    <td className="tabular-nums">{2025 + state.season + tier}</td>
                     <td className="text-right tabular-nums">{seats.toLocaleString("en-GB")}</td>
+                    {buildMode ? (
+                      <td className="pl-2 text-right">
+                        <FcBtn kind="lime" className="min-h-8 px-2 text-[0.65rem]" onClick={() => useGame.getState().liftStand(id)}>
+                          +
+                        </FcBtn>
+                      </td>
+                    ) : null}
                   </tr>
                 );
               })}
               <tr className="border-t border-black/10">
-                <td className="py-2 font-medium">Corners</td>
+                <td className="py-2">
+                  <span className="inline-block rounded-md bg-white px-2 py-1 font-medium shadow-sm">Corners</span>
+                </td>
                 <td>—</td>
                 <td className="text-right">0</td>
               </tr>
               <tr className="border-t border-black/20 font-bold">
                 <td className="py-2">Pitch ({state.pitchQuality}/99)</td>
-                <td />
-                <td className="text-right tabular-nums">{facts.seats.toLocaleString("en-GB")}</td>
+                <td>
+                  {buildMode ? (
+                    <FcBtn kind="white" className="min-h-8 px-2 text-[0.65rem]" onClick={() => useGame.getState().setPitch(1)}>
+                      +1
+                    </FcBtn>
+                  ) : null}
+                </td>
+                <td className="text-right tabular-nums underline">{facts.seats.toLocaleString("en-GB")}</td>
               </tr>
             </tbody>
           </table>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {STAND_IDS.map((id) => (
-              <FcBtn key={id} kind="lime" onClick={() => useGame.getState().liftStand(id)}>
-                Build {STANDS[id].name.split(" ")[0]}
-              </FcBtn>
-            ))}
-            <FcBtn kind="white" onClick={() => useGame.getState().setPitch(1)}>
-              Pitch +1
-            </FcBtn>
-          </div>
         </FcCard>
       </div>
     </FcShell>
@@ -570,10 +627,25 @@ function SquadScreen() {
             </div>
           </div>
         ) : null}
-        <p className="mt-2 px-1 text-[0.65rem] text-white/80">Tap a player to renew, loan or sell.</p>
+        <p className="mt-2 px-1 text-[0.65rem] text-white/80">
+          * Contract year left · ** Listed / loan. Positions: G goalkeeper, D defence, M midfield, A attack. Tap a player to renew, loan or sell.
+        </p>
       </div>
     </FcShell>
   );
+}
+
+function posGroup(pos: string): "G" | "D" | "M" | "A" {
+  if (pos === "GK") return "G";
+  if (pos === "CB" || pos === "LB" || pos === "RB") return "D";
+  if (pos === "CDM" || pos === "CM" || pos === "CAM") return "M";
+  return "A";
+}
+
+function playerFace(id: string) {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h + id.charCodeAt(i) * (i + 3)) % CHAIRMAN_AVATARS.length;
+  return CHAIRMAN_AVATARS[h] ?? "🧑";
 }
 
 function SquadBlock({
@@ -589,7 +661,8 @@ function SquadBlock({
     <div className="mt-2">
       <div className="px-1 font-display text-sm font-bold text-white uppercase">{title}</div>
       <div className="mt-1 overflow-hidden rounded-lg bg-white/90">
-        <div className="grid grid-cols-[1fr_2rem_2rem_4.5rem_2rem_2.5rem] gap-1 bg-[var(--color-fc-navy)] px-2 py-1 text-[0.6rem] font-bold text-white uppercase">
+        <div className="grid grid-cols-[1.75rem_1fr_1.5rem_2rem_4.5rem_2rem_2.5rem] gap-1 bg-[var(--color-fc-navy)] px-2 py-1 text-[0.6rem] font-bold text-white uppercase">
+          <span />
           <span>Player</span>
           <span>Pos</span>
           <span>Rat</span>
@@ -601,20 +674,25 @@ function SquadBlock({
           const form = p.ratingN ? (p.ratingSum / p.ratingN > 7 ? 2 : p.ratingSum / p.ratingN < 6 ? -1 : 1) : 0;
           const fit = p.injured > 0 ? -1 : p.fitness >= 80 ? 1 : p.fitness < 55 ? -1 : 0;
           const hap = p.morale >= 70 ? 1 : p.morale < 45 ? -1 : 0;
+          const g = posGroup(p.pos);
+          const mark = p.loan === "out" ? " **" : p.contract <= 1 ? " *" : "";
           return (
             <button
               type="button"
               key={p.id}
               onClick={() => onPick(p.id)}
-              className={`grid w-full grid-cols-[1fr_2rem_2rem_4.5rem_2rem_2.5rem] items-center gap-1 px-2 py-1.5 text-left text-xs ${i % 2 ? "bg-black/5" : ""}`}
+              className={`grid w-full grid-cols-[1.75rem_1fr_1.5rem_2rem_4.5rem_2rem_2.5rem] items-center gap-1 px-2 py-1.5 text-left text-xs ${i % 2 ? "bg-black/5" : ""}`}
             >
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--color-fc-lime-soft)] text-sm">
+                {playerFace(p.id)}
+              </span>
               <span className="truncate font-medium">
                 {p.name}
+                {mark}
                 {p.injured > 0 ? " 🤕" : ""}
                 {p.banned > 0 ? " 🟥" : ""}
-                {p.contract <= 1 ? " *" : ""}
               </span>
-              <span className={`rounded px-1 text-center text-[0.65rem] font-bold ${posTone(p.pos)}`}>{p.pos[0]}</span>
+              <span className={`rounded px-1 text-center text-[0.65rem] font-bold ${posTone(p.pos)}`}>{g}</span>
               <span className="rounded bg-black px-1 text-center font-bold text-white tabular-nums">{ovr(p)}</span>
               <span className="flex justify-center gap-0.5">
                 <Dot n={form} />
@@ -711,7 +789,12 @@ function Fixtures() {
         ga,
         result,
         crowd: played && home && f.attendance ? String(f.attendance) : played && home ? "—" : "—",
-        pos: wi < state.weekIndex ? String(tablePos({ ...state, weekIndex: wi })) : "—",
+        pos:
+          w.kind === "cup" && wi === 0
+            ? "FR"
+            : wi < state.weekIndex
+              ? String(tablePos({ ...state, weekIndex: wi }))
+              : "—",
         kind: w.kind,
       };
     });
@@ -780,9 +863,10 @@ function Fixtures() {
 function TableScreen() {
   const state = useGame();
   const table = leagueTable(state);
+  const n = table.length;
   return (
     <FcShell footer={<FcFooter buttons={[{ label: "Back", onClick: () => go("fixtures") }]} />}>
-      <FcHeader title="League Table" />
+      <FcHeader title={`${TIER_META[state.tier].name}, Week ${state.weekIndex}`} />
       <div className="px-3 py-3">
         <FcCard>
           <table className="w-full text-sm">
@@ -794,6 +878,8 @@ function TableScreen() {
                 <th className="text-right">W</th>
                 <th className="text-right">D</th>
                 <th className="text-right">L</th>
+                <th className="text-right">F</th>
+                <th className="text-right">A</th>
                 <th className="text-right">GD</th>
                 <th className="text-right">Pts</th>
               </tr>
@@ -801,14 +887,21 @@ function TableScreen() {
             <tbody>
               {table.map((row, i) => {
                 const c = state.clubs.find((x) => x.id === row.id);
+                const zone =
+                  i < 2 ? "bg-[#3E7D32]/15" : i >= n - 2 ? "bg-[#a50e0e]/10" : "";
                 return (
-                  <tr key={row.id} className={row.id === USER ? "bg-[var(--color-fc-lime)]/40 font-bold" : ""}>
+                  <tr
+                    key={row.id}
+                    className={`${row.id === USER ? "bg-[var(--color-fc-lime)]/40 font-bold" : zone}`}
+                  >
                     <td className="py-1.5">{i + 1}</td>
-                    <td>{c?.name}</td>
+                    <td className="truncate">{c?.short ?? c?.name}</td>
                     <td className="text-right tabular-nums">{row.p}</td>
                     <td className="text-right tabular-nums">{row.w}</td>
                     <td className="text-right tabular-nums">{row.d}</td>
                     <td className="text-right tabular-nums">{row.l}</td>
+                    <td className="text-right tabular-nums">{row.gf}</td>
+                    <td className="text-right tabular-nums">{row.ga}</td>
                     <td className="text-right tabular-nums">{row.gf - row.ga}</td>
                     <td className="text-right tabular-nums">{row.pts}</td>
                   </tr>
@@ -878,11 +971,18 @@ function ManagerScreen() {
               <div className="font-bold">
                 {m.name} — {ppg} PPG, {state.trophies.length} trophies
               </div>
-              <div className="text-black/60">
-                S{m.hiredSeason} W{m.hiredWeek + 1} —
-              </div>
-              <div>
-                P{m.played} W{m.won} D{m.drawn} L{m.lost}
+              <div className="mt-2 flex items-center gap-2 rounded-md bg-black/5 px-2 py-2">
+                <span className="flex h-10 w-10 items-center justify-center rounded-md bg-[var(--color-fc-lime-soft)] text-xl">
+                  {CHAIRMAN_AVATARS[m.avatar ?? 0]}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs text-black/60">
+                    {seasonMonthLabel(m.hiredWeek)} {2025 + m.hiredSeason} — now
+                  </div>
+                  <div className="font-bold tabular-nums">
+                    P{m.played} W{m.won} D{m.drawn} L{m.lost}
+                  </div>
+                </div>
               </div>
             </div>
           ) : (
@@ -909,6 +1009,15 @@ function ManagerScreen() {
 
 function staffSlots(state: ReturnType<typeof useGame.getState>) {
   const slots: { key: string; label: string; filled: boolean; canUpgrade: boolean; staffKey?: "coach" | "scout" | "physio" }[] = [];
+  const assistant = state.staff.assistant ?? Math.min(2, state.staff.coach);
+  for (let i = 0; i < 2; i++)
+    slots.push({
+      key: `a${i}`,
+      label: "Assistant",
+      filled: assistant > i,
+      canUpgrade: i === assistant && state.staff.coach < 5,
+      staffKey: "coach",
+    });
   for (let i = 0; i < 2; i++)
     slots.push({
       key: `p${i}`,
@@ -947,30 +1056,106 @@ function StatPill({ letter, n }: { letter: string; n: number }) {
 
 function ManagersPool() {
   const pool = useGame((s) => s.managerPool);
+  const cash = useGame((s) => s.cash);
+  const club = useGame((s) => userClub(s));
   const hireMgr = useGame((s) => s.hireMgr);
-  return (
-    <FcShell footer={<FcFooter buttons={[{ label: "Back", onClick: () => go("manager") }]} />}>
-      <FcHeader title="Other Managers" />
-      <div className="flex-1 space-y-2 overflow-y-auto px-3 py-3">
-        {pool.map((m) => (
-          <FcCard key={m.name}>
-            <div className="flex items-start justify-between gap-2">
+  const [picked, setPicked] = useState<(typeof pool)[number] | null>(null);
+  if (picked) {
+    const m = picked;
+    return (
+      <FcShell
+        footer={
+          <FcFooter
+            buttons={[
+              { label: "Cancel", onClick: () => setPicked(null) },
+              {
+                label: "Appoint",
+                primary: true,
+                onClick: () => {
+                  hireMgr(m);
+                  setPicked(null);
+                },
+              },
+            ]}
+          />
+        }
+      >
+        <FcHeader title="New manager?" />
+        <div className="px-3 py-3">
+          <FcCard>
+            <p className="text-sm text-black/75">
+              Appoint {m.name} as manager of {club?.name ?? "your club"}?
+            </p>
+            <div className="mt-3 flex gap-3">
+              <div className="flex h-16 w-16 items-center justify-center rounded-md bg-[var(--color-fc-lime-soft)] text-4xl">
+                {CHAIRMAN_AVATARS[m.avatar ?? 0]}
+              </div>
               <div>
-                <div className="font-display text-xl font-bold uppercase">{m.name}</div>
-                <div className="text-xs">
-                  {m.formation} {m.style} · £{m.wage} pw
-                </div>
+                <div className="font-display text-2xl font-bold uppercase">{m.name}</div>
                 <div className="mt-1 flex gap-1">
                   <StatPill letter="M" n={m.m} />
                   <StatPill letter="C" n={m.c} />
                   <StatPill letter="T" n={m.t} />
                 </div>
+                <div className="mt-1 text-sm">
+                  {m.formation} · {m.style} · Fans: {m.fanMood ?? "OK"}
+                </div>
+                <div className="mt-1 text-sm font-bold">
+                  Compensation £{(m.compensation ?? m.wage * 20).toLocaleString("en-GB")} · Bank {formatMoney(cash)}
+                </div>
               </div>
-              <FcBtn kind="lime" onClick={() => hireMgr(m)}>
-                Hire
-              </FcBtn>
             </div>
           </FcCard>
+        </div>
+      </FcShell>
+    );
+  }
+  return (
+    <FcShell
+      footer={
+        <FcFooter
+          buttons={[
+            { label: "Back", onClick: () => go("manager") },
+            {
+              label: "Reject and wait for more candidates",
+              onClick: () => {
+                const s = useGame.getState();
+                useGame.setState({ managerPool: makeManagerPool(s.seed + s.weekIndex * 11, s.manager.name) });
+              },
+            },
+          ]}
+        />
+      }
+    >
+      <FcHeader title="Hire a manager" />
+      <div className="flex-1 space-y-2 overflow-y-auto px-3 py-3">
+        {pool.map((m) => (
+          <button
+            key={m.name}
+            type="button"
+            onClick={() => setPicked(m)}
+            className="w-full rounded-xl bg-white/90 p-3 text-left shadow"
+          >
+            <div className="flex gap-3">
+              <div className="flex h-14 w-14 items-center justify-center rounded-md bg-[var(--color-fc-lime-soft)] text-3xl">
+                {CHAIRMAN_AVATARS[m.avatar ?? 0]}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="font-display text-xl font-bold uppercase">{m.name}</div>
+                <div className="mt-1 flex gap-1">
+                  <StatPill letter="M" n={m.m} />
+                  <StatPill letter="C" n={m.c} />
+                  <StatPill letter="T" n={m.t} />
+                </div>
+                <div className="mt-1 text-xs text-black/60">
+                  {m.formation} · {m.style} · Fans: {m.fanMood ?? "OK"}
+                </div>
+                <div className="text-xs text-black/50">
+                  Pay compensation: {(m.compensation ?? 0) > 0 ? formatMoney(m.compensation ?? m.wage * 20) : "None"}
+                </div>
+              </div>
+            </div>
+          </button>
         ))}
       </div>
     </FcShell>
@@ -985,23 +1170,29 @@ function YouthTraining({ kind }: { kind: "academy" | "training" }) {
   const cost = target > current ? facilityStepCost(current, target) : 0;
   const title = kind === "academy" ? "Youth Coaching" : "Training";
   const rating = current * 20;
+  const footerBtns =
+    kind === "training"
+      ? [
+          { label: "Back", onClick: () => go("dash") },
+          {
+            label: "Upgrade",
+            onClick: () => setFacTarget(kind, target),
+            primary: true,
+            disabled: target <= current,
+          },
+        ]
+      : [
+          { label: "Back", onClick: () => go("dash") },
+          {
+            label: "Upgrade",
+            onClick: () => setFacTarget(kind, target),
+            primary: true,
+            disabled: target <= current,
+          },
+          { label: "Squad", onClick: () => go("squad") },
+        ];
   return (
-    <FcShell
-      footer={
-        <FcFooter
-          buttons={[
-            { label: "Back", onClick: () => go("dash") },
-            {
-              label: "Upgrade",
-              onClick: () => setFacTarget(kind, target),
-              primary: true,
-              disabled: target <= current,
-            },
-            { label: "Squad", onClick: () => go("squad") },
-          ]}
-        />
-      }
-    >
+    <FcShell footer={<FcFooter buttons={footerBtns} />}>
       <FcHeader title={title} />
       <div className="px-3 py-3">
         <FcCard>
@@ -1127,6 +1318,10 @@ function Achievements() {
       }
     >
       <FcHeader title={`Achievements (${earned.length}/${ACHIEVEMENT_DEFS.length})`} />
+      <div className="flex items-center justify-between bg-white/70 px-3 py-1 text-[0.65rem] font-bold tracking-wide text-black/50 uppercase">
+        <span>Achievement</span>
+        <span>Date</span>
+      </div>
       <div className="flex-1 overflow-y-auto">
         {ACHIEVEMENT_DEFS.map((def) => {
           const got = map.get(def.id);
@@ -1219,17 +1414,19 @@ function Career() {
         <FcFooter
           buttons={[
             { label: "Back", onClick: () => go("dash") },
-            { label: "Settings", onClick: () => go("settings") },
-            { label: "Achieved", onClick: () => go("achievements") },
+            { label: "Club List", onClick: () => go("clubList") },
+            { label: "Highscores", onClick: () => go("highscores") },
           ]}
         />
       }
     >
-      <FcHeader title="Chairman Career" />
+      <FcHeader title="Chairman Career" onSettings={() => go("settings")} />
       <div className="px-3 py-3">
         <FcCard>
           <div className="flex gap-3">
-            <div className="flex h-16 w-16 items-center justify-center rounded-md bg-[var(--color-fc-lime-soft)] text-3xl">👔</div>
+            <div className="flex h-16 w-16 items-center justify-center rounded-md bg-[var(--color-fc-lime-soft)] text-3xl">
+              {CHAIRMAN_AVATARS[state.chairmanAvatar] ?? "👔"}
+            </div>
             <div>
               <div className="font-display text-2xl font-bold uppercase">{state.chairmanName}</div>
               <div className="text-sm text-black/60 uppercase">{userClub(state)?.name}</div>
@@ -1249,6 +1446,16 @@ function Career() {
             </div>
             <dl className="mt-2 grid gap-1">
               <Row k="All-time Profit/Loss" v={<MoneyBag n={state.seasonProfit} />} />
+              <Row k="Transfer fees paid" v={formatMoney(state.feesPaid ?? 0)} />
+              <Row k="Transfer fees received" v={formatMoney(state.feesReceived ?? 0)} />
+              <Row
+                k="Managers (avg games)"
+                v={String(
+                  state.managersHired
+                    ? Math.round((m.played + hist.reduce((s, h) => s + 1, 0)) / Math.max(1, state.managersHired))
+                    : m.played,
+                )}
+              />
               <Row k="Lifetime Fan Approval" v={`${state.fanChairHappy.toFixed(1)}%`} />
               <Row k="Lifetime Mgr Approval" v={`${state.fanMgrHappy.toFixed(1)}%`} />
               <Row k="Seasons logged" v={String(games || state.season)} />
@@ -1323,8 +1530,11 @@ function Inbox() {
 function Settings() {
   const stashSlot = useGame((s) => s.stashSlot);
   const exportCareer = useGame((s) => s.exportCareer);
+  const resumeSlot = useGame((s) => s.resumeSlot);
   const abandon = useGame((s) => s.abandon);
   const [slots, setSlots] = useState(() => listSlots());
+  const [prefOpen, setPrefOpen] = useState(false);
+  const [lang, setLang] = useState("English");
   const saveSlot = (id: number) => {
     stashSlot(id);
     setSlots(listSlots());
@@ -1341,12 +1551,45 @@ function Settings() {
     URL.revokeObjectURL(url);
   };
   return (
-    <FcShell footer={<FcFooter buttons={[{ label: "Back", onClick: () => go("dash") }]} />}>
+    <FcShell
+      footer={
+        <FcFooter
+          buttons={[
+            { label: "Back", onClick: () => go("dash") },
+            { label: "Preferences", onClick: () => setPrefOpen((p) => !p), primary: true },
+          ]}
+        />
+      }
+    >
       <FcHeader title="Settings" />
       <div className="space-y-3 px-3 py-3">
         <FcCard>
-          <div className="font-display text-lg font-bold uppercase">Save slots</div>
-          <div className="mt-2 grid gap-2">
+          <div className="font-display text-lg font-bold uppercase">Local career save</div>
+          <p className="mt-1 text-xs text-black/60">
+            Careers stay in this browser. Cloud email/password save from the classic app is not available here.
+          </p>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <FcBtn kind="white" onClick={() => saveSlot(1)}>
+              Save
+            </FcBtn>
+            <FcBtn
+              kind="white"
+              disabled={!slots.length}
+              onClick={() => {
+                const id = slots[0]?.id;
+                if (id != null) resumeSlot(id);
+              }}
+            >
+              Load
+            </FcBtn>
+            <FcBtn kind="lime" onClick={download}>
+              Export
+            </FcBtn>
+            <FcBtn kind="red" onClick={abandon}>
+              New game
+            </FcBtn>
+          </div>
+          <div className="mt-3 grid gap-2">
             {[1, 2, 3, 4, 5].map((id) => {
               const meta = slots.find((s) => s.id === id);
               return (
@@ -1357,15 +1600,34 @@ function Settings() {
               );
             })}
           </div>
-          <FcBtn className="mt-3 w-full" kind="lime" onClick={download}>
-            Export career JSON
-          </FcBtn>
         </FcCard>
-        <FcCard>
-          <FcBtn className="w-full" kind="red" onClick={abandon}>
-            Resign / new club
-          </FcBtn>
-        </FcCard>
+        {prefOpen ? (
+          <FcCard>
+            <div className="font-display text-lg font-bold uppercase">Preferences</div>
+            <div className="mt-2 grid gap-2">
+              <label className="text-xs font-bold tracking-wide text-black/50 uppercase">
+                Language
+                <select
+                  className="mt-1 w-full rounded-md border border-black/15 bg-white px-3 py-2 text-sm font-normal normal-case text-black"
+                  value={lang}
+                  onChange={(e) => setLang(e.target.value)}
+                >
+                  <option>English</option>
+                  <option disabled>More languages soon</option>
+                </select>
+              </label>
+              <FcBtn kind="white" onClick={() => go("about")}>
+                About
+              </FcBtn>
+              <FcBtn kind="white" onClick={() => go("inbox")}>
+                Inbox
+              </FcBtn>
+              <FcBtn kind="white" onClick={() => go("medical")}>
+                Medical centre
+              </FcBtn>
+            </div>
+          </FcCard>
+        ) : null}
       </div>
     </FcShell>
   );
@@ -1443,6 +1705,119 @@ function Rivals() {
               );
             })}
           </ul>
+        </FcCard>
+      </div>
+    </FcShell>
+  );
+}
+
+function HistoryScreen() {
+  const hist = useGame((s) => s.history);
+  const form = useGame((s) => s.form);
+  return (
+    <FcShell footer={<FcFooter buttons={[{ label: "Back", onClick: () => go("dash") }]} />}>
+      <FcHeader title="History" />
+      <div className="px-3 py-3">
+        <FcCard>
+          <div className="font-display text-sm font-bold uppercase">Recent form</div>
+          <FormDots form={form} />
+          <ul className="mt-3 grid gap-2 text-sm">
+            {hist.length ? (
+              hist.map((h) => (
+                <li key={`${h.season}-${h.tier}`} className="flex justify-between border-b border-black/10 py-1">
+                  <span>
+                    S{h.season} · Tier {h.tier}
+                  </span>
+                  <span className="tabular-nums">
+                    {h.pos}th · {h.pts} pts
+                  </span>
+                </li>
+              ))
+            ) : (
+              <li className="text-black/50">No completed seasons yet.</li>
+            )}
+          </ul>
+        </FcCard>
+      </div>
+    </FcShell>
+  );
+}
+
+function FinHistory() {
+  const state = useGame();
+  return (
+    <FcShell footer={<FcFooter buttons={[{ label: "Back", onClick: () => go("finances") }]} />}>
+      <FcHeader title="Financial History" />
+      <div className="px-3 py-3">
+        <FcCard>
+          <dl className="grid gap-2 text-sm">
+            <Row k="Season P/L" v={<MoneyBag n={state.seasonProfit} />} />
+            <Row k="Fees paid" v={formatMoney(state.feesPaid ?? 0)} />
+            <Row k="Fees received" v={formatMoney(state.feesReceived ?? 0)} />
+            <Row k="Debt" v={formatMoney(state.debt)} />
+            <Row k="Cash" v={formatMoney(state.cash)} />
+          </dl>
+        </FcCard>
+      </div>
+    </FcShell>
+  );
+}
+
+function ClubList() {
+  const state = useGame();
+  const table = leagueTable(state);
+  return (
+    <FcShell footer={<FcFooter buttons={[{ label: "Back", onClick: () => go("career") }]} />}>
+      <FcHeader title="Club List" />
+      <div className="px-3 py-3">
+        <FcCard>
+          <ul className="grid gap-1 text-sm">
+            {table.map((row, i) => (
+              <li key={row.id} className={`flex justify-between py-1 ${row.id === USER ? "font-bold" : ""}`}>
+                <span>
+                  {i + 1}. {state.clubs.find((c) => c.id === row.id)?.name}
+                </span>
+                <span className="tabular-nums">{row.pts}</span>
+              </li>
+            ))}
+          </ul>
+        </FcCard>
+      </div>
+    </FcShell>
+  );
+}
+
+function Highscores() {
+  const state = useGame();
+  return (
+    <FcShell footer={<FcFooter buttons={[{ label: "Back", onClick: () => go("career") }]} />}>
+      <FcHeader title="Highscores" />
+      <div className="px-3 py-3">
+        <FcCard>
+          <dl className="grid gap-2 text-sm">
+            <Row k="Trophies" v={String(state.trophies.length)} />
+            <Row k="Achievements" v={`${state.achievements.length}/${ACHIEVEMENT_DEFS.length}`} />
+            <Row k="Biggest crowd" v={String(state.records.biggestCrowd || "—")} />
+            <Row k="Bank high (cash now)" v={formatMoney(state.cash)} />
+          </dl>
+          <p className="mt-3 text-xs text-black/50">Local career scores only — no online board.</p>
+        </FcCard>
+      </div>
+    </FcShell>
+  );
+}
+
+function About() {
+  return (
+    <FcShell footer={<FcFooter buttons={[{ label: "Back", onClick: () => go("dash") }]} />}>
+      <FcHeader title="About" />
+      <div className="px-3 py-3">
+        <FcCard className="text-sm leading-relaxed text-black/75">
+          <p className="font-display text-lg font-bold uppercase">Tyrone Futbol · Chairman</p>
+          <p className="mt-2">
+            Build a club, hire a manager, set the budget, and climb the Tyrone pyramid. Inspired by Football Chairman desk
+            play.
+          </p>
         </FcCard>
       </div>
     </FcShell>

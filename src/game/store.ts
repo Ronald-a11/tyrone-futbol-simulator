@@ -127,6 +127,10 @@ type Store = SaveData & {
   setPitch: (delta: number) => void;
   dismissMail: (id: string) => void;
   clearMail: () => void;
+  advanceNews: () => void;
+  pickSponsor: (name: string, fee: number, untilSeason: number) => void;
+  setTickets: (price: number) => void;
+  setWinBonus: (pct: 0 | 10 | 20) => void;
 };
 
 let hooked = false;
@@ -198,6 +202,10 @@ function write(state: Store) {
     setPitch: _spit,
     dismissMail: _dm,
     clearMail: _cm,
+    advanceNews: _an,
+    pickSponsor: _ps,
+    setTickets: _stix,
+    setWinBonus: _swb,
     ...data
   } = state;
   try {
@@ -399,6 +407,67 @@ export const useGame = create<Store>((set, get) => ({
   setPitch: (delta) => get().act(bumpPitch(get(), delta)),
   dismissMail: (id) => get().act(dismissInbox(get(), id)),
   clearMail: () => get().act(clearInbox(get())),
+  advanceNews: () => {
+    const q = get().newsQueue.slice(1);
+    set({ newsQueue: q, notice: null });
+  },
+  pickSponsor: (name, fee, untilSeason) => {
+    const state = get();
+    const rest = state.newsQueue.slice(1);
+    const unveil = {
+      id: `sponsor-out-${state.season}`,
+      kind: "continue" as const,
+      title: "New shirt sponsor",
+      body: `${name} are on the chest. ${Math.round(fee / 1000)}k a season through season ${untilSeason}.`,
+      cta: "Continue",
+    };
+    set({
+      sponsorName: name,
+      sponsorBoost: 1 + Math.min(0.25, fee / 1_000_000),
+      sponsorUntil: untilSeason,
+      newsQueue: [unveil, ...rest],
+      notice: `${name} signed.`,
+    });
+  },
+  setTickets: (price) => {
+    const state = get();
+    const p = Math.max(3, Math.min(7, Math.round(price)));
+    const rest = state.newsQueue.slice(1);
+    const mood =
+      p <= 4 ? "The terrace loves the cheap tickets." : p >= 7 ? "Grumbles about the gate price." : "Ticket prices feel fair.";
+    const react = {
+      id: `ticket-react-${state.season}`,
+      kind: "continue" as const,
+      title: "Fans react to ticket prices",
+      body: `${mood} Matchday tickets are £${p}.`,
+      cta: "Continue",
+    };
+    set({
+      ticketPrice: p,
+      fans: Math.max(8, Math.min(99, state.fans + (p <= 4 ? 2 : p >= 7 ? -2 : 0))),
+      newsQueue: [react, ...rest],
+      notice: `Tickets set to £${p}.`,
+    });
+  },
+  setWinBonus: (pct) => {
+    const state = get();
+    const rest = state.newsQueue.slice(1);
+    const react = {
+      id: `bonus-react-${state.season}`,
+      kind: "continue" as const,
+      title: pct > 0 ? "Players delighted by bonus" : "Players accept no bonus",
+      body:
+        pct > 0
+          ? `A ${pct}% win bonus is agreed. Morale lifts in the dressing room.`
+          : "No win bonus this season. The squad stays professional.",
+      cta: "Continue",
+    };
+    set({
+      winBonusPct: pct,
+      newsQueue: [react, ...rest],
+      notice: `Win bonus ${pct}%.`,
+    });
+  },
   toggleMute: () => {
     const muted = !get().muted;
     setMuted(muted);

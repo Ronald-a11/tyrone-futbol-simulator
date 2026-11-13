@@ -26,34 +26,28 @@ export function Title() {
     useGame.setState({ phase: "hub" });
   };
   return (
-    <div className="fc-shell mx-auto flex min-h-dvh max-w-md flex-col px-5">
-      <div className="fc-rays safe-top flex flex-1 flex-col justify-end pb-8">
-        <div className="rise">
-          <Kicker tone="primary">Chairman</Kicker>
+    <div className="fc-shell mx-auto flex min-h-dvh max-w-md flex-col">
+      <div className="fc-header safe-top px-4 pb-2 pt-2 text-center font-display text-lg font-bold tracking-wide text-white uppercase">
+        Football Chairman
+      </div>
+      <div className="fc-rays flex flex-1 flex-col items-center justify-center px-5 pb-8">
+        <div className="text-6xl" aria-hidden>
+          ⚽
         </div>
-        <h1 className="rise rise-2 mt-4 font-display text-6xl leading-none tracking-wide text-white uppercase sm:text-7xl">
-          Tyrone
-          <span className="block text-[var(--color-fc-lime)]">Futbol</span>
-        </h1>
-        <p className="rise rise-3 mt-3 font-display text-2xl leading-none tracking-wide text-white/70 uppercase">Chairman</p>
-        <p className="rise rise-4 mt-6 max-w-sm text-pretty text-white/80">
+        <div className="mt-3 rounded-sm bg-white px-4 py-1 font-display text-xl font-bold tracking-wide text-black uppercase shadow">
+          Football Chairman
+        </div>
+        <p className="mt-6 max-w-sm text-center text-pretty text-white/85">
           Own the club. Hire the manager. Set the budget. Build the ground. Win the Tyrone pyramid.
         </p>
-        <div className="rise rise-5 mt-8 flex items-center gap-3">
-          <span className="mark seq-mark" aria-hidden />
-          <span className="text-xs tracking-widest text-muted uppercase">Three divisions · one chair</span>
-        </div>
       </div>
-      <div className="rise rise-5 safe-bottom grid gap-2 py-4">
-        {active && club ? (
-          <Btn onClick={resume}>Continue {club.short}</Btn>
-        ) : null}
+      <div className="safe-bottom grid gap-2 px-4 py-4">
+        {active && club ? <Btn onClick={resume}>Continue {club.short}</Btn> : null}
         <Btn kind={active ? "ghost" : "primary"} onClick={goCreate}>
-          Found a club
+          Get started!
         </Btn>
         {slots.length ? (
           <div className="mt-2 grid gap-2">
-            <div className="text-xs tracking-widest text-muted uppercase">Saved chairs</div>
             {slots.map((s) => (
               <Btn key={s.id} kind="quiet" onClick={() => resumeSlot(s.id)}>
                 Slot {s.id}: {s.label}
@@ -61,7 +55,7 @@ export function Title() {
             ))}
           </div>
         ) : null}
-        <label className="press mt-1 inline-flex min-h-11 cursor-pointer items-center justify-center rounded-lg border border-line bg-transparent px-4 py-2 text-sm font-medium">
+        <label className="press mt-1 inline-flex min-h-11 cursor-pointer items-center justify-center rounded-lg border border-line bg-transparent px-4 py-2 text-sm font-medium text-white">
           Import career
           <input
             type="file"
@@ -75,111 +69,6 @@ export function Title() {
             }}
           />
         </label>
-      </div>
-    </div>
-  );
-}
-
-export function Create() {
-  const backTitle = useGame((s) => s.backTitle);
-  const startClub = useGame((s) => s.startClub);
-  const [managerName, setManager] = useState("Tyrone");
-  const [clubName, setClub] = useState("Quay Athletic");
-  const [city, setCity] = useState("Quay");
-  const [primary, setPrimary] = useState(KIT_COLORS[1]?.hex ?? "#d6b25e");
-  const [secondary, setSecondary] = useState(KIT_COLORS[0]?.hex ?? "#14261f");
-  const [philosophy, setPhil] = useState<Philosophy>("possession");
-  const [formation, setForm] = useState<FormationId>("4-3-3");
-  const short = shortName(clubName);
-  const ready = clubName.trim().length >= 3 && city.trim().length >= 2 && managerName.trim().length >= 2;
-  return (
-    <div className="fc-shell mx-auto min-h-dvh max-w-md">
-      <div className="fc-header safe-top px-4 pb-3 pt-2">
-        <button type="button" onClick={backTitle} className="text-sm text-white/80">
-          Back
-        </button>
-        <h1 className="mt-2 font-display text-3xl leading-none tracking-wide text-white uppercase">Take the chair</h1>
-        <p className="mt-2 text-sm text-white/75">
-          You are chairman. A manager is hired for you. Harbor League, £2.40m, top-four brief.
-        </p>
-      </div>
-      <div className="fc-rays flex-1 px-4 py-4">
-        <div className="fc-card mb-4 flex items-center gap-3 rounded-xl p-3 shadow-md">
-          <Crest primary={primary} secondary={secondary} short={short} size={56} />
-          <div className="min-w-0">
-            <div className="truncate font-display text-2xl leading-none text-[var(--color-fc-navy)] uppercase">
-              {clubName || "Your club"}
-            </div>
-            <div className="mt-1 text-sm text-black/60">{city || "City"} Park</div>
-          </div>
-        </div>
-        <div className="fc-card grid gap-3 rounded-xl p-3 shadow-md">
-          <Field label="Chairman name" value={managerName} onChange={setManager} />
-          <Field label="Club name" value={clubName} onChange={setClub} />
-          <Field label="City" value={city} onChange={setCity} />
-          <div>
-            <div className="mb-1 text-xs tracking-wide text-black/50 uppercase">Short</div>
-            <div className="font-display text-2xl text-[var(--color-fc-navy)]">{short}</div>
-          </div>
-        </div>
-        <div className="fc-card mt-3 rounded-xl p-3 shadow-md">
-          <div className="mb-2 text-xs font-bold tracking-wide text-black/50 uppercase">Shirt</div>
-          <Swatches value={primary} onChange={setPrimary} />
-          <div className="mt-3 mb-2 text-xs font-bold tracking-wide text-black/50 uppercase">Trim</div>
-          <Swatches value={secondary} onChange={setSecondary} />
-        </div>
-        <div className="mt-3 grid gap-2">
-          {PHILOSOPHIES.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => setPhil(p.id)}
-              className={`rounded-lg border px-3 py-3 text-left ${philosophy === p.id ? "border-transparent bg-[var(--color-fc-lime)] font-bold text-black" : "border-black/10 bg-white text-black"}`}
-            >
-              <div className="font-medium">{p.title}</div>
-              <div className="text-sm opacity-80">{p.body}</div>
-            </button>
-          ))}
-        </div>
-        <div className="fc-card mt-3 rounded-xl p-3 shadow-md">
-          <div className="mb-2 text-xs font-bold tracking-wide text-black/50 uppercase">Opening shape</div>
-          <div className="flex flex-wrap gap-2">
-            {CLASSIC.map((id) => (
-              <Btn key={id} kind={formation === id ? "primary" : "ghost"} onClick={() => setForm(id)}>
-                {id}
-              </Btn>
-            ))}
-          </div>
-          <div className="mt-3 mb-2 text-xs font-bold tracking-wide text-black/50 uppercase">Advanced</div>
-          <div className="flex flex-wrap gap-2">
-            {ADVANCED.map((id) => (
-              <Btn key={id} kind={formation === id ? "primary" : "ghost"} onClick={() => setForm(id)}>
-                {id}
-              </Btn>
-            ))}
-          </div>
-          <p className="mt-2 text-sm text-black/60">
-            {formation} · {SHAPES[formation].name}. {SHAPES[formation].idea}
-          </p>
-        </div>
-        <Btn
-          className="mt-4 mb-6 w-full"
-          disabled={!ready}
-          onClick={() =>
-            startClub({
-              managerName,
-              clubName,
-              short,
-              city,
-              primary,
-              secondary,
-              philosophy,
-              formation,
-            })
-          }
-        >
-          Open the season
-        </Btn>
       </div>
     </div>
   );
@@ -260,6 +149,7 @@ export function ReportView() {
   const clubs = useGame((s) => s.clubs);
   const leave = useGame((s) => s.leaveReport);
   const review = useGame((s) => s.review);
+  const [showAll, setShowAll] = useState(false);
   if (!report) {
     return (
       <div className="p-6">
@@ -270,84 +160,109 @@ export function ReportView() {
   const home = clubs.find((c) => c.id === report.homeId);
   const away = clubs.find((c) => c.id === report.awayId);
   const name = (id: string) => clubs.find((c) => c.id === id)?.short ?? id;
+  const crowdNote = report.notes.find((n) => n.startsWith("Gate:"));
+  const crowdMatch = crowdNote?.match(/Gate:\s*([\d,]+)/);
+  const crowd = crowdMatch?.[1] ?? "—";
+  const timeline = [
+    { minute: 90, icon: "⏱", text: `Full time: ${report.homeScore}-${report.awayScore}`, italic: true },
+    ...[...report.scorers]
+      .sort((a, b) => b.minute - a.minute)
+      .map((s) => ({
+        minute: s.minute,
+        icon: s.side === "home" ? "🟢" : "🟡",
+        text: `Goal ${s.side === "home" ? home?.name ?? "Home" : away?.name ?? "Away"}${s.side === "home" ? ` (${s.name})` : ""}`,
+        italic: false,
+      })),
+    { minute: 45, icon: "⏱", text: "Half time", italic: true },
+    { minute: 0, icon: "⏱", text: "Kick off", italic: true },
+    ...report.notes
+      .filter((n) => !n.startsWith("Gate:"))
+      .slice(0, 3)
+      .map((n) => ({ minute: -1, icon: "💬", text: n, italic: true })),
+  ];
   return (
-    <div className="fc-shell mx-auto max-w-md px-0 pb-16">
-      <div className="fc-header safe-top px-4 pb-3 pt-2">
-        <div className="text-xs tracking-wide text-white/70 uppercase">{report.label}</div>
-        <h1 className="mt-1 font-display text-3xl leading-none tracking-wide text-white uppercase">Match report</h1>
+    <div className="fc-shell mx-auto flex min-h-dvh max-w-md flex-col">
+      <div className="fc-header safe-top px-4 pb-2 pt-2 text-center text-xs tracking-wide text-white/70 uppercase">
+        {report.label}
       </div>
-      <div className="fc-rays px-4 py-4">
-      <div className="fc-card rounded-xl p-4 shadow-md">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="truncate font-display text-2xl text-[var(--color-fc-navy)] uppercase">{home?.short}</div>
-            <div className="truncate text-sm text-black/60">{home?.name}</div>
+      <div className="fc-rays flex flex-1 flex-col px-3 pb-4">
+        <div className="rounded-lg bg-black px-3 py-3 text-white shadow-lg">
+          <div className="flex items-center justify-between gap-2 font-display text-xl font-bold uppercase">
+            <span className="min-w-0 flex-1 truncate">{home?.name ?? "Home"}</span>
+            <span className="tabular-nums">{report.homeScore}</span>
           </div>
-          <div className="font-display text-5xl leading-none tabular-nums text-[var(--color-fc-navy)]">
-            {report.homeScore}
-            <span className="text-black/40">–</span>
-            {report.awayScore}
+          <div className="mt-1 flex items-center justify-between gap-2 font-display text-xl font-bold uppercase">
+            <span className="min-w-0 flex-1 truncate">{away?.name ?? "Away"}</span>
+            <span className="tabular-nums">{report.awayScore}</span>
           </div>
-          <div className="min-w-0 flex-1 text-right">
-            <div className="truncate font-display text-2xl text-[var(--color-fc-navy)] uppercase">{away?.short}</div>
-            <div className="truncate text-sm text-black/60">{away?.name}</div>
+          <div className="mt-2 flex justify-between text-xs text-white/70">
+            <span>90 mins</span>
+            <span>Crowd: {crowd}</span>
           </div>
         </div>
-        <p className="mt-3 text-sm text-black/60">
-          xG {report.xgH.toFixed(2)}–{report.xgA.toFixed(2)} · {report.motm}
-        </p>
-      </div>
-      <ul className="mt-3 text-sm">
-        {report.scorers.map((s, i) => (
-          <li key={`${s.playerId}-${i}`}>
-            {s.minute}' {s.name} ({s.side === "home" ? home?.short : away?.short})
-          </li>
-        ))}
-      </ul>
-      <div className="mt-4 grid gap-1 text-sm">
-        {report.notes.map((n) => (
-          <p key={n} className="text-pretty text-muted">
-            {n}
-          </p>
-        ))}
-        <p className="tabular-nums">
-          Gate {money(report.gate)} · TV {money(report.broadcast ?? 0)} · shirt {money(report.sponsor)} · costs {money(report.wages)} · board {report.boardDelta >= 0 ? "+" : ""}
-          {report.boardDelta}
-        </p>
-      </div>
-      <Panel className="mt-4">
-        <Kicker>Ratings</Kicker>
-        <ul className="mt-2">
-          {report.ratings.slice(0, 12).map((r) => (
-            <li key={r.id} className="flex justify-between gap-3 border-t border-line py-2 text-sm">
-              <span>
-                {r.name} <span className="text-muted">{r.pos}</span>
+        <ul className="mt-3 overflow-hidden rounded-xl bg-white/90 text-sm shadow">
+          {timeline.map((row, i) => (
+            <li
+              key={`${row.minute}-${i}`}
+              className={`flex items-start gap-2 px-3 py-2 ${i % 2 ? "bg-black/5" : ""}`}
+            >
+              <span className="w-8 shrink-0 tabular-nums text-black/50">{row.minute >= 0 ? `${row.minute}'` : ""}</span>
+              <span className="w-5 shrink-0" aria-hidden>
+                {row.icon}
               </span>
-              <span className="tabular-nums">{r.rating.toFixed(1)}</span>
+              <span className={`min-w-0 flex-1 ${row.italic ? "italic text-black/70" : "font-medium"}`}>{row.text}</span>
             </li>
           ))}
         </ul>
-      </Panel>
-      {report.other.length ? (
-        <Panel className="mt-4">
-          <Kicker>Elsewhere</Kicker>
-          <ul className="mt-2 text-sm">
-            {report.other.map((o) => (
-              <li key={`${o.homeId}-${o.awayId}`} className="flex justify-between py-1">
-                <span>
-                  {name(o.homeId)} vs {name(o.awayId)}
-                </span>
-                <span className="tabular-nums">
-                  {o.hs}–{o.as}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </Panel>
-      ) : null}
-      <Btn className="mt-6 w-full" onClick={leave}>
-        {review ? "Season review" : "Back to the desk"}
-      </Btn>
+        {showAll ? (
+          <div className="mt-3 space-y-2">
+            <div className="rounded-xl bg-white/90 p-3 text-sm shadow">
+              <div className="font-bold uppercase">Ratings · MOTM {report.motm}</div>
+              <ul className="mt-2">
+                {report.ratings.slice(0, 12).map((r) => (
+                  <li key={r.id} className="flex justify-between border-t border-black/10 py-1">
+                    <span>
+                      {r.name} <span className="text-black/50">{r.pos}</span>
+                    </span>
+                    <span className="tabular-nums">{r.rating.toFixed(1)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            {report.other.length ? (
+              <div className="rounded-xl bg-white/90 p-3 text-sm shadow">
+                <div className="font-bold uppercase">Elsewhere</div>
+                <ul className="mt-2">
+                  {report.other.map((o) => (
+                    <li key={`${o.homeId}-${o.awayId}`} className="flex justify-between py-1">
+                      <span>
+                        {name(o.homeId)} vs {name(o.awayId)}
+                      </span>
+                      <span className="tabular-nums">
+                        {o.hs}–{o.as}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            <p className="px-1 text-xs text-white/80 tabular-nums">
+              Gate {money(report.gate)} · TV {money(report.broadcast ?? 0)} · shirt {money(report.sponsor)} · costs{" "}
+              {money(report.wages)}
+            </p>
+          </div>
+        ) : null}
+        <div className="mt-auto grid gap-2 pt-4">
+          {!showAll ? (
+            <Btn kind="primary" onClick={() => setShowAll(true)}>
+              All results
+            </Btn>
+          ) : (
+            <Btn kind="primary" onClick={leave}>
+              {review ? "Season review" : "Back to the desk"}
+            </Btn>
+          )}
+        </div>
       </div>
     </div>
   );

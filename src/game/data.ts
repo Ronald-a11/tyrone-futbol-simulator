@@ -630,7 +630,7 @@ export type StandSpec = {
 export const STANDS: Record<StandId, StandSpec> = {
   west: {
     id: "west",
-    name: "Main Stand",
+    name: "West Stand",
     end: "West",
     seats: [2600, 4400, 6800, 9400, 12200],
     boxes: [0, 80, 320, 700, 1300],
@@ -658,7 +658,7 @@ export const STANDS: Record<StandId, StandSpec> = {
   },
   north: {
     id: "north",
-    name: "North End",
+    name: "North Stand",
     end: "North",
     seats: [1400, 2600, 4200, 6200, 8400],
     boxes: [0, 0, 0, 0, 0],
@@ -672,7 +672,7 @@ export const STANDS: Record<StandId, StandSpec> = {
   },
   south: {
     id: "south",
-    name: "South End",
+    name: "South Stand",
     end: "South",
     seats: [1100, 2000, 3400, 5000, 6800],
     boxes: [0, 0, 0, 0, 0],
@@ -686,7 +686,7 @@ export const STANDS: Record<StandId, StandSpec> = {
   },
 };
 
-export const STAND_IDS: StandId[] = ["west", "east", "north", "south"];
+export const STAND_IDS: StandId[] = ["north", "east", "south", "west"];
 
 function clampTier(n: number) {
   return Math.max(0, Math.min(4, Math.round(n)));

@@ -96,6 +96,7 @@ export function acceptDeal(state: SaveData): Result {
       cash: state.cash - fee,
       deal: null,
       players: state.players.map((p) => (p.id === player.id ? next : p)),
+      feesPaid: (state.feesPaid ?? 0) + fee,
     },
     notice: `${player.name} signs for ${money(fee)}. Wage £${wage.toLocaleString("en-GB")} a week.`,
   };
@@ -158,7 +159,15 @@ export function sellPlayer(state: SaveData, id: string): Result {
   }
   const offer = state.offer?.playerId === id ? null : state.offer;
   return {
-    save: { ...state, players, xi, bench, cash: state.cash + fee, offer },
+    save: {
+      ...state,
+      players,
+      xi,
+      bench,
+      cash: state.cash + fee,
+      offer,
+      feesReceived: (state.feesReceived ?? 0) + fee,
+    },
     notice: `${player.name} sold for £${Math.round(fee / 1000)}k.`,
   };
 }
@@ -486,6 +495,14 @@ export function hireManager(state: SaveData, mgr: ClubManager): Result {
     hiredWeek: state.weekIndex,
   };
   const picked = pickXi(state.players, USER, hired.formation);
+  const clubName = state.clubs.find((c) => c.id === USER)?.name ?? "the club";
+  const appointed = {
+    id: `appointed-${hired.name}-${state.weekIndex}`,
+    kind: "continue" as const,
+    title: "New manager appointed",
+    body: `${hired.name} is on a rolling contract at ${clubName}. Severance is twelve months' wages (£${(hired.wage * 52).toLocaleString("en-GB")}) if you sack him.`,
+    cta: "Continue",
+  };
   return {
     save: {
       ...state,
@@ -496,8 +513,10 @@ export function hireManager(state: SaveData, mgr: ClubManager): Result {
       xi: picked.xi,
       bench: picked.bench,
       managerPool: makeManagerPool(state.seed + state.season * 9, hired.name),
+      managersHired: (state.managersHired ?? 1) + 1,
       screen: "manager",
       board: clamp(state.board + 2, 0, 100),
+      newsQueue: [appointed, ...(state.newsQueue ?? [])],
     },
     notice: `${hired.name} takes the dugout. ${hired.formation} · ${hired.style}.`,
   };

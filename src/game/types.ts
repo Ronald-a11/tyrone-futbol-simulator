@@ -56,9 +56,16 @@ export type Screen =
   | "inbox"
   | "settings"
   | "medical"
-  | "rivals";
+  | "rivals"
+  | "history"
+  | "finHistory"
+  | "clubList"
+  | "highscores"
+  | "about";
 
 export type BudgetMode = "max" | "normal" | "cautious" | "strict" | "zero";
+
+export type FanMood = "Popular" | "OK" | "Unsure" | "Unpopular";
 
 export type ClubManager = {
   name: string;
@@ -75,7 +82,22 @@ export type ClubManager = {
   lost: number;
   hiredSeason: number;
   hiredWeek: number;
+  fanMood?: FanMood;
+  compensation?: number;
+  avatar?: number;
 };
+
+export type NewsCard =
+  | { id: string; kind: "continue"; title: string; body: string; cta?: string }
+  | {
+      id: string;
+      kind: "sponsor";
+      title: string;
+      body: string;
+      options: { name: string; fee: number; untilSeason: number }[];
+    }
+  | { id: string; kind: "tickets"; title: string; body: string; min: number; max: number }
+  | { id: string; kind: "bonus"; title: string; body: string; wages: number; recommended: number };
 
 export type Outlets = {
   burger: number;
@@ -346,9 +368,20 @@ export type SaveData = {
   training: TrainingFocus;
   facilities: Facilities;
   stands: Stands;
-  staff: Staff;
+  staff: Staff & { assistant?: number };
   sponsorName: string;
   sponsorBoost: number;
+  sponsorUntil: number;
+  ticketPrice: number;
+  winBonusPct: 0 | 10 | 20;
+  chairmanAvatar: number;
+  kitId: number;
+  rivalClubId: string;
+  stadiumName: string;
+  feesPaid: number;
+  feesReceived: number;
+  managersHired: number;
+  newsQueue: NewsCard[];
   clubs: Club[];
   players: Player[];
   weeks: Week[];
@@ -382,8 +415,13 @@ export type CreateInput = {
   clubName: string;
   short: string;
   city: string;
+  stadiumName: string;
   primary: string;
   secondary: string;
   philosophy: Philosophy;
   formation: FormationId;
+  chairmanAvatar: number;
+  kitId: number;
+  rivalClubId: string;
+  manager: ClubManager;
 };
