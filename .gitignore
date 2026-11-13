@@ -12,3 +12,5 @@ tsc-out.txt
 .env
 .env.*
 !.env.example
+
+.vercel

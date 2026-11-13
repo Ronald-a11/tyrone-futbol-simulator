@@ -1,5 +1,4 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { AlertToggle } from "@/components/game/AlertToggle";
 import { STAND_IDS, STANDS, TIER_META, standFacts, standsOf } from "@/game/data";
 import {
   ACHIEVEMENT_DEFS,
@@ -1361,12 +1360,6 @@ function Settings() {
           <FcBtn className="mt-3 w-full" kind="lime" onClick={download}>
             Export career JSON
           </FcBtn>
-        </FcCard>
-        <FcCard>
-          <div className="font-display text-lg font-bold uppercase">Alerts</div>
-          <div className="mt-2">
-            <AlertToggle />
-          </div>
         </FcCard>
         <FcCard>
           <FcBtn className="w-full" kind="red" onClick={abandon}>
