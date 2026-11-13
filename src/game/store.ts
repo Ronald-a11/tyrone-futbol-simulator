@@ -234,10 +234,10 @@ export const useGame = create<Store>((set, get) => ({
           const save = normalize(parsed);
           setMuted(!!save.muted);
           set({ ...save, booted: true, notice: null });
-        } else set({ booted: true });
-      } else set({ booted: true });
+        } else set({ ...blankSave(), phase: "create", booted: true, notice: null });
+      } else set({ ...blankSave(), phase: "create", booted: true, notice: null });
     } catch {
-      set({ booted: true });
+      set({ ...blankSave(), phase: "create", booted: true, notice: null });
     }
     if (!hooked) {
       hooked = true;
@@ -290,7 +290,7 @@ export const useGame = create<Store>((set, get) => ({
       /* ignore */
     }
     stopCrowd();
-    set({ ...blankSave(), booted: true, notice: null });
+    set({ ...blankSave(), phase: "create", booted: true, notice: null });
   },
   setScreen: (screen) => set({ screen, notice: null }),
   act: (result) => set({ ...result.save, notice: result.notice ? result.notice : null }),

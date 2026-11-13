@@ -6,9 +6,28 @@ export function FcShell({ children, footer }: { children: ReactNode; footer?: Re
     <div className="mobile-frame mx-auto flex min-h-dvh w-full max-w-[430px] flex-col">
       <div className="fc-shell relative flex min-h-dvh flex-1 flex-col overflow-hidden">
         <div className="fc-rays relative flex min-h-0 flex-1 flex-col">{children}</div>
-        {footer ? <div className="safe-bottom shrink-0 px-2 pb-2 pt-1">{footer}</div> : null}
+        {footer ? <div className="safe-bottom shrink-0">{footer}</div> : null}
       </div>
     </div>
+  );
+}
+
+export function OnboardHeader({ onHelp }: { onHelp?: () => void }) {
+  return (
+    <header className="fc-header safe-top flex shrink-0 items-center gap-2 px-3 pb-2.5 pt-2">
+      <button
+        type="button"
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-sm font-bold text-[var(--color-fc-navy)]"
+        aria-label="Help"
+        onClick={onHelp}
+      >
+        ?
+      </button>
+      <h1 className="min-w-0 flex-1 truncate text-center font-display text-[1.05rem] leading-none font-bold tracking-wide text-white uppercase sm:text-[1.15rem]">
+        Tyrone Futbol Simulator
+      </h1>
+      <span className="w-9 shrink-0" aria-hidden />
+    </header>
   );
 }
 
@@ -60,9 +79,31 @@ export function FcCard({ children, className = "" }: { children: ReactNode; clas
 
 export function FcFooter({
   buttons,
+  solid,
 }: {
   buttons: { label: string; onClick: () => void; primary?: boolean; disabled?: boolean }[];
+  /** Full-bleed forest bar like classic mobile onboarding. */
+  solid?: boolean;
 }) {
+  if (solid) {
+    return (
+      <nav className="grid overflow-hidden rounded-none" style={{ gridTemplateColumns: `repeat(${buttons.length}, 1fr)` }}>
+        {buttons.map((b) => (
+          <button
+            key={b.label}
+            type="button"
+            disabled={b.disabled}
+            onClick={b.onClick}
+            className={`press min-h-14 border-r border-black/20 px-2 text-center font-display text-[0.95rem] font-bold tracking-wide text-white uppercase last:border-r-0 disabled:opacity-40 ${
+              b.primary ? "bg-[#3E7D32]" : "bg-[#2d5a27]"
+            }`}
+          >
+            {b.label}
+          </button>
+        ))}
+      </nav>
+    );
+  }
   return (
     <nav className="fc-footer grid gap-1.5 rounded-2xl p-1.5" style={{ gridTemplateColumns: `repeat(${buttons.length}, 1fr)` }}>
       {buttons.map((b) => (

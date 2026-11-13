@@ -21,9 +21,10 @@ const MGR_NAMES = [
 ];
 
 export const CHAIRMAN_AVATARS = [
-  "🧑‍💼", "👨‍🦱", "👨‍🦰", "🧔", "👨‍🦳", "🧑‍🦱", "👩‍💼", "👩‍🦰", "👩‍🦱", "👩‍🦳",
-  "🧑‍🦰", "🧔‍♂️", "👴", "👵", "🧑", "👨", "👩", "🧔‍♀️", "🧑‍💻", "🤵",
-  "🤵‍♀️", "👮", "🧑‍🏫", "👨‍🔬",
+  "🧑‍💼", "👨‍🦱", "👨‍🦰", "🧔", "👨‍🦳", "🧑‍🦱", "👨‍🦲", "👨",
+  "🧔‍♂️", "🧑‍🦰", "🧑", "👴", "👱‍♂️", "👨‍🔬", "🧑‍🏫", "🤵",
+  "👩‍💼", "👩‍🦰", "👩‍🦱", "👩‍🦳", "👩", "👱‍♀️", "👩‍🔬", "🧑‍💻",
+  "🤵‍♀️", "👮", "👵", "🧔‍♀️",
 ];
 
 export const KIT_PATTERNS: { id: number; name: string; primary: string; secondary: string; pattern: string }[] = [
@@ -165,7 +166,7 @@ export function makeManagerPool(seed: number, exclude: string): ClubManager[] {
       hiredSeason: 1,
       hiredWeek: 0,
       fanMood: fanMoodFor(seed, i),
-      compensation: wage * 20,
+      compensation: unit(seed, 88 + i, 1) > 0.55 ? Math.round(wage * 20) : 0,
       avatar: Math.floor(unit(seed, 95 + i, 1) * CHAIRMAN_AVATARS.length),
     });
   }
