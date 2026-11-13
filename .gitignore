@@ -1,0 +1,14 @@
+node_modules
+.vercel
+screenshots
+artifacts
+.grok
+.data
+dist
+*.log
+.node_modules.lock
+.DS_Store
+tsc-out.txt
+.env
+.env.*
+!.env.example

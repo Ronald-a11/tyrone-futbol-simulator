@@ -1,0 +1,243 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #1a3d28;
+  --color-surface: #e1e5ea;
+  --color-fg: #142016;
+  --color-muted: #5a6b62;
+  --color-primary: #a2d149;
+  --color-line: color-mix(in oklab, #142016 14%, transparent);
+  --color-pitch: #2d6b3a;
+  --color-bank: #2c4464;
+  --color-fc-navy: #2c4464;
+  --color-fc-forest: #2d5a27;
+  --color-fc-lime: #a2d149;
+  --color-fc-lime-soft: #b8d978;
+  --color-fc-card: #e8ecf0;
+  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --radius-sm: 0.35rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+}
+
+@layer base {
+  html,
+  body {
+    background: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    min-height: 100%;
+    line-height: 1.45;
+  }
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-fc-lime);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--color-fc-lime) 45%, transparent);
+    color: #142016;
+  }
+}
+
+body {
+  margin: 0;
+}
+
+.app-bg {
+  min-height: 100dvh;
+  background: var(--color-bg);
+}
+
+.fc-shell {
+  background: linear-gradient(180deg, #3a5a7a 0%, #2c4464 12%, #2d6b3a 42%, #1a3d28 100%);
+}
+
+.fc-rays {
+  background-image:
+    radial-gradient(ellipse 80% 55% at 50% 0%, rgba(255, 255, 255, 0.18), transparent 55%),
+    repeating-conic-gradient(from 0deg at 50% 8%, transparent 0deg 8deg, rgba(255, 255, 255, 0.04) 8deg 10deg);
+}
+
+.fc-header {
+  background: var(--color-fc-navy);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.25);
+}
+
+.fc-card {
+  background: var(--color-fc-card);
+  color: #142016;
+}
+
+.fc-footer {
+  background: var(--color-fc-forest);
+  box-shadow: 0 -2px 0 rgba(0, 0, 0, 0.2);
+}
+
+.safe-top {
+  padding-top: max(0.5rem, env(safe-area-inset-top));
+}
+
+.safe-bottom {
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+}
+
+.pb-nav {
+  padding-bottom: calc(4.5rem + env(safe-area-inset-bottom));
+}
+
+.press {
+  transition:
+    transform 120ms ease,
+    filter 120ms ease;
+}
+
+.press:active {
+  transform: scale(0.97);
+  filter: brightness(0.95);
+}
+
+.bar-fill {
+  transition: width 280ms ease;
+}
+
+.rise {
+  animation: rise 400ms ease both;
+}
+
+.rise-2 {
+  animation-delay: 50ms;
+}
+
+.rise-3 {
+  animation-delay: 100ms;
+}
+
+.rise-4 {
+  animation-delay: 150ms;
+}
+
+.rise-5 {
+  animation-delay: 200ms;
+}
+
+.screen-in {
+  animation: rise 280ms ease both;
+}
+
+.notice-in {
+  animation: rise 240ms ease both;
+}
+
+.toast {
+  animation: toast-in 240ms ease both;
+}
+
+.toast-out {
+  animation: toast-out 140ms ease-in both;
+}
+
+.toast-goal {
+  box-shadow: inset 3px 0 0 var(--color-fc-lime);
+}
+
+.score-pop {
+  animation: score-pop 400ms ease;
+}
+
+.goal-wash {
+  background: color-mix(in oklab, var(--color-fc-lime) 35%, transparent);
+  animation: wash 700ms ease-out both;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes toast-out {
+  to {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes score-pop {
+  0% {
+    transform: scale(0.85);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes wash {
+  0% {
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.mark {
+  width: 2.5rem;
+  height: 1.5rem;
+  border-radius: 0.2rem;
+  background: repeating-linear-gradient(90deg, #2d6b3a 0 25%, #fff 25% 50%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .press,
+  .press:active,
+  .bar-fill {
+    transition: none;
+    transform: none;
+  }
+  .rise,
+  .screen-in,
+  .notice-in,
+  .toast,
+  .toast-out,
+  .score-pop {
+    animation: none;
+    opacity: 1;
+  }
+  .goal-wash {
+    animation: none;
+    opacity: 0;
+  }
+}
