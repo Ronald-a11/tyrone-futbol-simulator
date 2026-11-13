@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { APP_BRAND_SHORT } from "@/game/brand";
 import { useGame } from "@/game/store";
 import { FcBtn, FcCard, FcFooter, FcHeader, FcSelectRow, FcShell, formatMoney } from "./chrome";
 
@@ -18,7 +19,7 @@ export function NewsOverlay() {
     return (
       <div className="fixed inset-0 z-50 bg-black/40">
         <FcShell footer={<FcFooter buttons={[{ label: card.cta ?? "Continue", onClick: advance, primary: true }]} />}>
-          <FcHeader title="Football Chairman" />
+          <FcHeader title={APP_BRAND_SHORT} brand />
           <div className="px-3 py-6">
             <FcCard>
               <div className="font-display text-xl font-bold uppercase">{card.title}</div>

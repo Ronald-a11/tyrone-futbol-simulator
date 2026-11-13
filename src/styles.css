@@ -1,25 +1,25 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg: #1a3d28;
-  --color-surface: #e1e5ea;
+  --color-bg: #0e1a14;
+  --color-surface: #eef2f0;
   --color-fg: #142016;
   --color-muted: #5a6b62;
-  --color-primary: #a2d149;
+  --color-primary: #c6f06c;
   --color-line: color-mix(in oklab, #142016 14%, transparent);
-  --color-pitch: #2d6b3a;
-  --color-bank: #2c4464;
-  --color-fc-navy: #2c4464;
-  --color-fc-forest: #2d5a27;
-  --color-fc-lime: #a2d149;
-  --color-fc-lime-soft: #b8d978;
-  --color-fc-card: #e8ecf0;
-  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
-  --radius-sm: 0.35rem;
-  --radius-md: 0.5rem;
-  --radius-lg: 0.75rem;
-  --radius-xl: 1rem;
+  --color-pitch: #1f6b3a;
+  --color-bank: #17324a;
+  --color-fc-navy: #17324a;
+  --color-fc-forest: #1f5a2e;
+  --color-fc-lime: #c6f06c;
+  --color-fc-lime-soft: #d7f59a;
+  --color-fc-card: #f3f6f4;
+  --font-sans: "Sora", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Archivo Black", "Arial Black", Impact, sans-serif;
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.25rem;
 }
 
 @layer base {
@@ -56,32 +56,54 @@ body {
 
 .app-bg {
   min-height: 100dvh;
-  background: var(--color-bg);
+  background:
+    radial-gradient(ellipse 70% 40% at 50% -10%, rgba(198, 240, 108, 0.12), transparent 55%),
+    linear-gradient(180deg, #12261c 0%, #0e1a14 100%);
+}
+
+.mobile-frame {
+  min-height: 100dvh;
+}
+
+@media (min-width: 480px) {
+  .mobile-frame {
+    padding: 1rem 0;
+  }
+  .mobile-frame > .fc-shell {
+    min-height: calc(100dvh - 2rem);
+    border-radius: 1.75rem;
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.06),
+      0 24px 60px rgba(0, 0, 0, 0.45);
+    overflow: hidden;
+  }
 }
 
 .fc-shell {
-  background: linear-gradient(180deg, #3a5a7a 0%, #2c4464 12%, #2d6b3a 42%, #1a3d28 100%);
+  background: linear-gradient(165deg, #1a3f2a 0%, #17324a 28%, #1f5a2e 62%, #0f2418 100%);
 }
 
 .fc-rays {
   background-image:
-    radial-gradient(ellipse 80% 55% at 50% 0%, rgba(255, 255, 255, 0.18), transparent 55%),
-    repeating-conic-gradient(from 0deg at 50% 8%, transparent 0deg 8deg, rgba(255, 255, 255, 0.04) 8deg 10deg);
+    radial-gradient(ellipse 90% 45% at 50% -5%, rgba(198, 240, 108, 0.16), transparent 50%),
+    linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.03) 50%, transparent 100%);
 }
 
 .fc-header {
-  background: var(--color-fc-navy);
-  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.25);
+  background: color-mix(in oklab, var(--color-fc-navy) 92%, black);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .fc-card {
   background: var(--color-fc-card);
   color: #142016;
+  border: 1px solid rgba(20, 32, 22, 0.06);
 }
 
 .fc-footer {
-  background: var(--color-fc-forest);
-  box-shadow: 0 -2px 0 rgba(0, 0, 0, 0.2);
+  background: color-mix(in oklab, var(--color-fc-forest) 85%, black);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .safe-top {

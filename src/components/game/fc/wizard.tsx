@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { APP_BRAND, APP_BRAND_SHORT } from "@/game/brand";
 import { KIT_COLORS, TIER_CLUBS } from "@/game/data";
 import { CHAIRMAN_AVATARS, KIT_PATTERNS, makeManagerPool } from "@/game/fc";
 import { useGame } from "@/game/store";
@@ -56,14 +57,14 @@ export function CreateWizard() {
       <FcShell
         footer={<FcFooter buttons={[{ label: "Continue", onClick: () => setStep("welcome"), primary: true }]} />}
       >
-        <FcHeader title="Football Chairman" />
-        <div className="fc-rays flex flex-1 flex-col items-center px-4 py-6">
+        <FcHeader title={APP_BRAND_SHORT} brand />
+        <div className="flex flex-1 flex-col items-center px-4 py-6">
           <LogoMark />
           <FcCard className="mt-4 max-h-[50vh] overflow-y-auto text-sm leading-snug text-black/80">
-            <p>© 2026 Tyrone Futbol. Inspired by classic chairman management. All Rights Reserved.</p>
+            <p>© 2026 {APP_BRAND}. All Rights Reserved.</p>
             <p className="mt-3">
-              This game lets you build a fictional club through the Tyrone pyramid. Names are invented. No third party
-              endorses this product.
+              Build a fictional club through the Tyrone pyramid. Names are invented. No third party endorses this
+              product.
             </p>
             <p className="mt-3">
               By playing you accept our{" "}
@@ -81,8 +82,8 @@ export function CreateWizard() {
       <FcShell
         footer={<FcFooter buttons={[{ label: "Get started!", onClick: () => setStep("club"), primary: true }]} />}
       >
-        <FcHeader title="Football Chairman" />
-        <div className="fc-rays flex flex-1 flex-col items-center px-4 py-6">
+        <FcHeader title={APP_BRAND_SHORT} brand />
+        <div className="flex flex-1 flex-col items-center px-4 py-6">
           <LogoMark />
           <FcCard className="mt-4 text-sm leading-relaxed text-black/80">
             Build a football club from scratch. Start as a tiny Harbor League side and climb the Tyrone pyramid to the
@@ -214,7 +215,7 @@ export function CreateWizard() {
           <FcFooter buttons={[{ label: "Choose manager", onClick: () => setStep("mgrPick"), primary: true }]} />
         }
       >
-        <FcHeader title="Football Chairman" />
+        <FcHeader title={APP_BRAND_SHORT} brand />
         <div className="px-3 py-6">
           <FcCard>
             <div className="font-display text-lg font-bold uppercase">Manager candidates shortlisted</div>
@@ -340,11 +341,11 @@ function Field({ label, value, onChange }: { label: string; value: string; onCha
 function LogoMark() {
   return (
     <div className="flex flex-col items-center">
-      <div className="text-5xl" aria-hidden>
+      <div className="flex h-20 w-20 items-center justify-center rounded-[1.5rem] bg-[var(--color-fc-lime)] text-4xl shadow-md" aria-hidden>
         ⚽
       </div>
-      <div className="mt-2 rounded-sm bg-white px-4 py-1 font-display text-lg font-bold tracking-wide text-black uppercase shadow">
-        Football Chairman
+      <div className="mt-3 text-center font-display text-2xl leading-none font-bold tracking-wide text-white uppercase">
+        {APP_BRAND}
       </div>
     </div>
   );

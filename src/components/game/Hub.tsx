@@ -55,7 +55,7 @@ export function Hub() {
         <button
           type="button"
           onClick={clear}
-          className="notice-in fixed top-12 right-0 left-0 z-40 mx-auto max-w-md px-3"
+          className="notice-in fixed top-12 right-0 left-0 z-40 mx-auto max-w-[430px] px-3"
         >
           <div className="rounded-lg bg-[var(--color-fc-navy)] px-3 py-2 text-center text-sm text-white shadow-lg">
             {notice}
@@ -127,17 +127,21 @@ function Dashboard() {
   const month = seasonMonthLabel(state.weekIndex);
   return (
     <FcShell footer={<FcFooter buttons={footer} />}>
-      <FcHeader title="Football Chairman" onSettings={() => go("settings")} onHelp={() => go("about")} />
-      <div className="flex flex-1 flex-col gap-2 px-3 pb-3 pt-2">
-        <div className="mx-auto mt-1 max-w-[90%] rounded-sm bg-white px-4 py-1 text-center font-display text-lg font-bold tracking-wide text-[var(--color-fc-navy)] uppercase shadow">
-          {club?.name ?? "Club"}
+      <FcHeader title="Desk" brand onSettings={() => go("settings")} onHelp={() => go("about")} />
+      <div className="flex flex-1 flex-col gap-2.5 px-3 pb-3 pt-2">
+        <div className="mx-auto w-full max-w-[92%] rounded-2xl bg-white px-4 py-2.5 text-center shadow-sm">
+          <div className="font-display text-xl font-bold tracking-wide text-[var(--color-fc-navy)] uppercase">
+            {club?.name ?? "Club"}
+          </div>
         </div>
-        <div className="flex items-center justify-center gap-2 text-xs text-white">
-          <span>{month} {2025 + state.season}</span>
-          <span className="rounded-full bg-sky-300/90 px-3 py-0.5 font-bold text-[var(--color-fc-navy)]">
+        <div className="flex items-center justify-center gap-2 text-xs text-white/90">
+          <span className="tabular-nums">
+            {month} {2025 + state.season}
+          </span>
+          <span className="rounded-xl bg-[var(--color-fc-lime)] px-3 py-1 font-bold text-[#142016]">
             {TIER_META[state.tier].name}
           </span>
-          <span>Wk {state.weekIndex}</span>
+          <span className="tabular-nums">Wk {state.weekIndex}</span>
         </div>
         <div className="grid grid-cols-4 gap-2">
           <FcTile label="Weekend" value={state.weekIndex} tone="white" onClick={() => go("fixtures")} />
@@ -1820,10 +1824,10 @@ function About() {
       <FcHeader title="About" />
       <div className="px-3 py-3">
         <FcCard className="text-sm leading-relaxed text-black/75">
-          <p className="font-display text-lg font-bold uppercase">Tyrone Futbol · Chairman</p>
+          <p className="font-display text-lg font-bold uppercase">Tyrone Futbol Simulator</p>
           <p className="mt-2">
-            Build a club, hire a manager, set the budget, and climb the Tyrone pyramid. Inspired by Football Chairman desk
-            play.
+            Build a club from scratch, hire and fire managers, set the budget, develop the ground, and climb the Tyrone
+            pyramid. Mobile web chairman desk — careers save in this browser.
           </p>
         </FcCard>
       </div>

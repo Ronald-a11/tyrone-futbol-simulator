@@ -6,8 +6,10 @@ import { listSlots } from "@/game/saves";
 import { seasonLeaders } from "@/game/scout";
 import { useGame } from "@/game/store";
 import type { FormationId, Philosophy } from "@/game/types";
+import { APP_BRAND, APP_TAGLINE } from "@/game/brand";
 import { inkFor, money, shortName } from "@/game/util";
 import { USER, leagueTable, userClub } from "@/game/world";
+import { FcBtn, FcShell } from "./fc/chrome";
 import { Btn, Crest, Field, Kicker, Panel, Seg } from "./ui";
 
 export function Title() {
@@ -26,51 +28,59 @@ export function Title() {
     useGame.setState({ phase: "hub" });
   };
   return (
-    <div className="fc-shell mx-auto flex min-h-dvh max-w-md flex-col">
-      <div className="fc-header safe-top px-4 pb-2 pt-2 text-center font-display text-lg font-bold tracking-wide text-white uppercase">
-        Football Chairman
+    <FcShell
+      footer={
+        <div className="grid gap-2 px-1">
+          {active && club ? (
+            <FcBtn kind="lime" className="w-full min-h-12 text-base" onClick={resume}>
+              Continue {club.short}
+            </FcBtn>
+          ) : null}
+          <FcBtn kind={active ? "white" : "lime"} className="w-full min-h-12 text-base" onClick={goCreate}>
+            New career
+          </FcBtn>
+          {slots.length ? (
+            <div className="grid gap-1.5">
+              {slots.map((s) => (
+                <FcBtn key={s.id} kind="white" className="w-full" onClick={() => resumeSlot(s.id)}>
+                  Slot {s.id}: {s.label}
+                </FcBtn>
+              ))}
+            </div>
+          ) : null}
+          <label className="press inline-flex min-h-11 cursor-pointer items-center justify-center rounded-xl border border-white/25 px-4 py-2 text-sm font-medium text-white">
+            Import career
+            <input
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                importCareer(await file.text());
+                e.target.value = "";
+              }}
+            />
+          </label>
+        </div>
+      }
+    >
+      <div className="fc-header safe-top px-4 pb-3 pt-3 text-center">
+        <div className="text-[0.65rem] font-semibold tracking-[0.18em] text-white/55 uppercase">Mobile career</div>
+        <div className="mt-1 font-display text-lg font-bold tracking-wide text-white uppercase">{APP_BRAND}</div>
       </div>
-      <div className="fc-rays flex flex-1 flex-col items-center justify-center px-5 pb-8">
-        <div className="text-6xl" aria-hidden>
+      <div className="flex flex-1 flex-col items-center justify-center px-6 pb-4">
+        <div className="flex h-24 w-24 items-center justify-center rounded-[1.75rem] bg-[var(--color-fc-lime)] text-5xl shadow-lg" aria-hidden>
           ⚽
         </div>
-        <div className="mt-3 rounded-sm bg-white px-4 py-1 font-display text-xl font-bold tracking-wide text-black uppercase shadow">
-          Football Chairman
-        </div>
-        <p className="mt-6 max-w-sm text-center text-pretty text-white/85">
-          Own the club. Hire the manager. Set the budget. Build the ground. Win the Tyrone pyramid.
-        </p>
+        <h1 className="mt-6 text-center font-display text-[2.1rem] leading-[0.95] font-bold tracking-wide text-white uppercase">
+          Tyrone
+          <br />
+          Futbol Simulator
+        </h1>
+        <p className="mt-4 max-w-xs text-center text-pretty text-sm leading-relaxed text-white/80">{APP_TAGLINE}</p>
       </div>
-      <div className="safe-bottom grid gap-2 px-4 py-4">
-        {active && club ? <Btn onClick={resume}>Continue {club.short}</Btn> : null}
-        <Btn kind={active ? "ghost" : "primary"} onClick={goCreate}>
-          Get started!
-        </Btn>
-        {slots.length ? (
-          <div className="mt-2 grid gap-2">
-            {slots.map((s) => (
-              <Btn key={s.id} kind="quiet" onClick={() => resumeSlot(s.id)}>
-                Slot {s.id}: {s.label}
-              </Btn>
-            ))}
-          </div>
-        ) : null}
-        <label className="press mt-1 inline-flex min-h-11 cursor-pointer items-center justify-center rounded-lg border border-line bg-transparent px-4 py-2 text-sm font-medium text-white">
-          Import career
-          <input
-            type="file"
-            accept="application/json,.json"
-            className="hidden"
-            onChange={async (e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              importCareer(await file.text());
-              e.target.value = "";
-            }}
-          />
-        </label>
-      </div>
-    </div>
+    </FcShell>
   );
 }
 
@@ -105,8 +115,10 @@ export function Press() {
   const back = useGame((s) => s.setScreen);
   const q = QUESTIONS[week % QUESTIONS.length] ?? QUESTIONS[0];
   return (
-    <div className="fc-shell mx-auto flex min-h-dvh max-w-md flex-col">
+    <div className="mobile-frame mx-auto flex min-h-dvh w-full max-w-[430px] flex-col">
+      <div className="fc-shell flex min-h-dvh flex-1 flex-col">
       <div className="fc-header safe-top px-4 pb-3 pt-2">
+        <div className="text-[0.65rem] font-semibold tracking-[0.14em] text-white/55 uppercase">{APP_BRAND}</div>
         <div className="text-xs tracking-wide text-white/70 uppercase">{label}</div>
         <h1 className="mt-1 font-display text-3xl leading-none tracking-wide text-white uppercase">Team talk</h1>
       </div>
@@ -139,6 +151,7 @@ export function Press() {
             Back to the desk
           </button>
         </div>
+      </div>
       </div>
     </div>
   );
@@ -181,8 +194,10 @@ export function ReportView() {
       .map((n) => ({ minute: -1, icon: "💬", text: n, italic: true })),
   ];
   return (
-    <div className="fc-shell mx-auto flex min-h-dvh max-w-md flex-col">
+    <div className="mobile-frame mx-auto flex min-h-dvh w-full max-w-[430px] flex-col">
+      <div className="fc-shell flex min-h-dvh flex-1 flex-col">
       <div className="fc-header safe-top px-4 pb-2 pt-2 text-center text-xs tracking-wide text-white/70 uppercase">
+        <div className="text-[0.65rem] font-semibold tracking-[0.14em] text-white/55 uppercase">{APP_BRAND}</div>
         {report.label}
       </div>
       <div className="fc-rays flex flex-1 flex-col px-3 pb-4">
@@ -263,6 +278,7 @@ export function ReportView() {
             </Btn>
           )}
         </div>
+      </div>
       </div>
     </div>
   );
@@ -439,9 +455,11 @@ export function MatchDay() {
   const liveForm = side === "home" ? live.homeForm : live.awayForm;
 
   return (
-    <div className="fc-shell mx-auto flex h-dvh max-w-md flex-col overflow-hidden">
+    <div className="mobile-frame mx-auto flex h-dvh w-full max-w-[430px] flex-col overflow-hidden">
+      <div className="fc-shell flex h-dvh flex-1 flex-col overflow-hidden">
       <header className="fc-header safe-top flex shrink-0 items-end justify-between gap-3 px-4 pb-3">
         <div className="min-w-0">
+          <div className="text-[0.65rem] font-semibold tracking-[0.14em] text-white/55 uppercase">{APP_BRAND}</div>
           <div className="text-xs tracking-wide text-white/70 uppercase">{live.weekLabel}{live.period === "et" ? " · Extra time" : live.period === "pens" ? " · Penalties" : ""}</div>
           <div className="mt-1 truncate font-display text-3xl leading-none text-white uppercase">
             {home?.short}
@@ -623,6 +641,7 @@ export function MatchDay() {
         {live.finished ? (
           <Btn onClick={toReport}>See the report</Btn>
         ) : null}
+      </div>
       </div>
     </div>
   );
