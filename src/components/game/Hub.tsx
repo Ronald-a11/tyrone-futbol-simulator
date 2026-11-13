@@ -715,7 +715,11 @@ function Dot({ n }: { n: number }) {
 }
 
 function SquadStats() {
-  const players = useGame((s) => userPlayers(s).filter((p) => p.played > 0).sort((a, b) => ovr(b) - ovr(a)));
+  const state = useGame();
+  const players = useMemo(
+    () => userPlayers(state).filter((p) => p.played > 0).sort((a, b) => ovr(b) - ovr(a)),
+    [state.players, state.xi],
+  );
   return (
     <FcShell footer={<FcFooter buttons={[{ label: "Back", onClick: () => go("squad") }]} />}>
       <FcHeader title="Squad Stats" />
@@ -740,10 +744,13 @@ function SquadStats() {
 }
 
 function SquadGoals() {
-  const players = useGame((s) =>
-    userPlayers(s)
-      .filter((p) => p.goals + p.assists > 0)
-      .sort((a, b) => b.goals - a.goals || b.assists - a.assists),
+  const state = useGame();
+  const players = useMemo(
+    () =>
+      userPlayers(state)
+        .filter((p) => p.goals + p.assists > 0)
+        .sort((a, b) => b.goals - a.goals || b.assists - a.assists),
+    [state.players],
   );
   return (
     <FcShell footer={<FcFooter buttons={[{ label: "Back", onClick: () => go("squad") }]} />}>
