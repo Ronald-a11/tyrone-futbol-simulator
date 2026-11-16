@@ -1,12 +1,13 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { APP_BRAND_SHORT } from "@/game/brand";
+import { currencySymbol, getDisplayCurrency } from "@/game/util";
 
 export function FcShell({ children, footer }: { children: ReactNode; footer?: ReactNode }) {
   return (
     <div className="mobile-frame mx-auto flex min-h-dvh w-full max-w-[430px] flex-col">
       <div className="fc-shell relative flex min-h-dvh flex-1 flex-col overflow-hidden">
-        <div className="fc-rays relative flex min-h-0 flex-1 flex-col">{children}</div>
-        {footer ? <div className="safe-bottom shrink-0">{footer}</div> : null}
+        <div className="fc-rays relative flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
+        {footer ? <div className="safe-bottom z-10 shrink-0">{footer}</div> : null}
       </div>
     </div>
   );
@@ -14,16 +15,11 @@ export function FcShell({ children, footer }: { children: ReactNode; footer?: Re
 
 export function OnboardHeader({ onHelp }: { onHelp?: () => void }) {
   return (
-    <header className="fc-header safe-top flex shrink-0 items-center gap-2 px-3 pb-2.5 pt-2">
-      <button
-        type="button"
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-sm font-bold text-[var(--color-fc-navy)]"
-        aria-label="Help"
-        onClick={onHelp}
-      >
+    <header className="fc-header safe-top flex shrink-0 items-center gap-2 px-2.5 pb-2 pt-1.5">
+      <button type="button" className="fc-mark shrink-0" aria-label="Help" onClick={onHelp}>
         ?
       </button>
-      <h1 className="min-w-0 flex-1 truncate text-center font-display text-[1.05rem] leading-none font-bold tracking-wide text-white uppercase sm:text-[1.15rem]">
+      <h1 className="min-w-0 flex-1 truncate text-center font-display text-[1.2rem] leading-none text-white uppercase">
         Tyrone Futbol Simulator
       </h1>
       <span className="w-9 shrink-0" aria-hidden />
@@ -44,26 +40,16 @@ export function FcHeader({
 }) {
   const label = brand ? APP_BRAND_SHORT : title;
   return (
-    <header className="fc-header safe-top flex shrink-0 items-center gap-2 px-3 pb-2.5 pt-2">
-      <button
-        type="button"
-        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-sm font-bold text-white"
-        aria-label="Help"
-        onClick={onHelp}
-      >
+    <header className="fc-header safe-top flex shrink-0 items-center gap-2 px-2.5 pb-2 pt-1.5">
+      <button type="button" className="fc-mark shrink-0" aria-label="Help" onClick={onHelp}>
         ?
       </button>
       <div className="min-w-0 flex-1 text-center">
-        {!brand && title !== APP_BRAND_SHORT ? (
-          <div className="text-[0.65rem] font-semibold tracking-[0.14em] text-white/55 uppercase">{APP_BRAND_SHORT}</div>
-        ) : null}
-        <h1 className="truncate font-display text-[1.35rem] leading-none font-bold tracking-wide text-white uppercase">
-          {label}
-        </h1>
+        <h1 className="truncate font-display text-[1.35rem] font-semibold leading-none tracking-wide text-white uppercase">{label}</h1>
       </div>
       <button
         type="button"
-        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-base text-white"
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-white/15 text-lg leading-none font-black text-white"
         aria-label="Settings"
         onClick={onSettings}
       >
@@ -74,7 +60,7 @@ export function FcHeader({
 }
 
 export function FcCard({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <section className={`fc-card rounded-2xl p-4 shadow-sm ${className}`}>{children}</section>;
+  return <section className={`fc-card rounded-xl p-3.5 ${className}`}>{children}</section>;
 }
 
 export function FcFooter({
@@ -82,19 +68,18 @@ export function FcFooter({
   solid,
 }: {
   buttons: { label: string; onClick: () => void; primary?: boolean; disabled?: boolean }[];
-  /** Full-bleed forest bar like classic mobile onboarding. */
   solid?: boolean;
 }) {
   if (solid) {
     return (
-      <nav className="grid overflow-hidden rounded-none" style={{ gridTemplateColumns: `repeat(${buttons.length}, 1fr)` }}>
+      <nav className="grid overflow-hidden" style={{ gridTemplateColumns: `repeat(${buttons.length}, 1fr)` }}>
         {buttons.map((b) => (
           <button
             key={b.label}
             type="button"
             disabled={b.disabled}
             onClick={b.onClick}
-            className={`press min-h-14 border-r border-black/20 px-2 text-center font-display text-[0.95rem] font-bold tracking-wide text-white uppercase last:border-r-0 disabled:opacity-40 ${
+            className={`press min-h-14 border-r border-black/25 px-2 text-center font-display text-[1rem] text-white uppercase last:border-r-0 disabled:opacity-40 ${
               b.primary ? "bg-[#3E7D32]" : "bg-[#2d5a27]"
             }`}
           >
@@ -105,17 +90,15 @@ export function FcFooter({
     );
   }
   return (
-    <nav className="fc-footer grid gap-1.5 rounded-2xl p-1.5" style={{ gridTemplateColumns: `repeat(${buttons.length}, 1fr)` }}>
+    <nav className="grid" style={{ gridTemplateColumns: `repeat(${buttons.length}, 1fr)` }}>
       {buttons.map((b) => (
         <button
           key={b.label}
           type="button"
           disabled={b.disabled}
           onClick={b.onClick}
-          className={`press min-h-12 rounded-xl px-2 text-center font-display text-[0.8rem] font-bold tracking-wide uppercase disabled:opacity-40 ${
-            b.primary
-              ? "bg-[var(--color-fc-lime)] text-[#142016]"
-              : "bg-white/10 text-white"
+          className={`press min-h-[3.4rem] border-r border-black/20 px-2 text-center font-display text-[0.95rem] uppercase last:border-r-0 disabled:opacity-40 ${
+            b.primary ? "bg-[var(--color-fc-lime)] text-[#142016]" : "bg-[#2d5a27] text-white"
           }`}
         >
           {b.label}
@@ -142,20 +125,22 @@ export function FcTile({
 }) {
   const bg =
     tone === "navy"
-      ? "bg-[var(--color-fc-navy)] text-white"
+      ? "fc-tile-navy bg-[var(--color-fc-navy)] text-white"
       : tone === "green"
-        ? "bg-[var(--color-fc-forest)] text-white"
+        ? "fc-tile-green bg-[var(--color-fc-forest)] text-white"
         : tone === "lime"
           ? "bg-[var(--color-fc-lime-soft)] text-[#142016]"
-          : "bg-white text-[#142016]";
+          : "bg-[#ecefec] text-[#142016]";
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`press flex min-h-[4.5rem] flex-col items-center justify-center rounded-2xl px-2 py-2.5 shadow-sm ${bg} ${wide ? "col-span-2" : ""}`}
+      className={`press fc-tile flex min-h-[4.35rem] flex-col items-center justify-center rounded-xl px-1.5 py-2 ${bg} ${wide ? "col-span-2" : ""}`}
     >
-      <div className="font-display text-[0.62rem] font-bold tracking-[0.12em] uppercase opacity-75">{label}</div>
-      {children ?? <div className="mt-0.5 font-display text-[1.65rem] font-bold leading-none tabular-nums">{value}</div>}
+      <div className="font-sans text-[0.68rem] leading-none font-extrabold uppercase opacity-80">{label}</div>
+      {children ?? (
+        <div className="mt-1 font-display text-[1.75rem] leading-none tabular-nums">{value}</div>
+      )}
     </button>
   );
 }
@@ -169,7 +154,7 @@ export function FcBtn({
     kind === "lime"
       ? "bg-[var(--color-fc-lime)] text-[#142016]"
       : kind === "white"
-        ? "bg-white text-[#142016] shadow-sm"
+        ? "bg-[#ecefec] text-[#142016]"
         : kind === "red"
           ? "bg-[#a50e0e] text-white"
           : "bg-[var(--color-fc-forest)] text-white";
@@ -177,7 +162,7 @@ export function FcBtn({
     <button
       type="button"
       {...props}
-      className={`press inline-flex min-h-11 items-center justify-center rounded-xl px-3 text-sm font-bold disabled:opacity-40 ${look} ${className}`}
+      className={`press inline-flex min-h-11 items-center justify-center rounded-lg border-2 border-black/15 px-3 font-sans text-sm font-extrabold uppercase disabled:opacity-40 ${look} ${className}`}
     />
   );
 }
@@ -195,10 +180,10 @@ export function FcSelectRow({
     <button
       type="button"
       onClick={onClick}
-      className={`press w-full rounded-xl border px-3 py-3 text-left text-sm ${
+      className={`press w-full rounded-lg border-2 px-3 py-2.5 text-left text-sm font-bold ${
         selected
-          ? "border-[var(--color-fc-lime)] bg-[var(--color-fc-lime)]/35"
-          : "border-black/10 bg-white"
+          ? "border-[#8fbf3a] bg-[var(--color-fc-lime)]/40"
+          : "border-black/15 bg-white"
       }`}
     >
       {children}
@@ -209,12 +194,18 @@ export function FcSelectRow({
 export function FormDots({ form }: { form: string }) {
   const cells = form.padEnd(10, " ").slice(-10).split("");
   return (
-    <div className="flex justify-center gap-1.5 py-1">
+    <div className="flex justify-center gap-1 py-1">
       {cells.map((c, i) => {
         const tone =
-          c === "W" ? "bg-[#3E7D32] text-white" : c === "D" ? "bg-[#c9a227] text-white" : c === "L" ? "bg-[#a50e0e] text-white" : "bg-white/15 text-transparent";
+          c === "W"
+            ? "bg-[#3E7D32] text-white"
+            : c === "D"
+              ? "bg-[#c9a227] text-white"
+              : c === "L"
+                ? "bg-[#a50e0e] text-white"
+                : "border-2 border-white/35 bg-transparent text-transparent";
         return (
-          <span key={i} className={`flex h-6 w-6 items-center justify-center rounded-full text-[0.65rem] font-bold ${tone}`}>
+          <span key={i} className={`flex h-6 w-6 items-center justify-center rounded-sm text-[0.7rem] font-black ${tone}`}>
             {c.trim() || "·"}
           </span>
         );
@@ -225,23 +216,24 @@ export function FormDots({ form }: { form: string }) {
 
 export function PitchMark() {
   return (
-    <div className="mx-auto mb-3 flex h-24 w-40 items-center justify-center rounded-2xl bg-[#245a32] shadow-inner">
-      <div className="h-16 w-28 rounded-lg border-2 border-white/40 bg-[#2d6b3a]/70" />
+    <div className="mx-auto mb-3 h-28 w-full max-w-[220px] overflow-hidden rounded-xl shadow-md">
+      <img src="/stadium/pitch-good.jpg" alt="" className="h-full w-full object-cover" draggable={false} />
     </div>
   );
 }
 
 export function MoneyBag({ n }: { n: number }) {
   const neg = n < 0;
-  return <span className={neg ? "font-bold text-[#a50e0e]" : "font-bold text-[#3E7D32]"}>{formatMoney(n)}</span>;
+  return <span className={neg ? "font-extrabold text-[#a50e0e]" : "font-extrabold text-[#3E7D32]"}>{formatMoney(n)}</span>;
 }
 
 export function formatMoney(n: number) {
   const abs = Math.abs(n);
   const sign = n < 0 ? "-" : "";
-  if (abs >= 1_000_000) return `${sign}£${(abs / 1_000_000).toFixed(2)}m`;
-  if (abs >= 1_000) return `${sign}£${Math.round(abs / 1000)}k`;
-  return `${sign}£${Math.round(abs)}`;
+  const sym = currencySymbol(getDisplayCurrency());
+  if (abs >= 1_000_000) return `${sign}${sym}${(abs / 1_000_000).toFixed(2)}m`;
+  if (abs >= 1_000) return `${sign}${sym}${Math.round(abs / 1000)}k`;
+  return `${sign}${sym}${Math.round(abs)}`;
 }
 
 export function posTone(pos: string) {
@@ -249,4 +241,38 @@ export function posTone(pos: string) {
   if (pos === "CB" || pos === "LB" || pos === "RB") return "bg-sky-200 text-sky-950";
   if (pos === "CDM" || pos === "CM" || pos === "CAM") return "bg-emerald-200 text-emerald-950";
   return "bg-rose-200 text-rose-950";
+}
+
+export function TileGlyph({ kind }: { kind: "cup" | "chart" | "pitch" | "star" }) {
+  if (kind === "cup") {
+    return (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden className="mt-0.5">
+        <path d="M8 4h8v3a4 4 0 0 1-8 0V4Z" stroke="currentColor" strokeWidth="2" />
+        <path d="M8 5H5.5A2.5 2.5 0 0 0 5 10c1.2 0 2.2-.7 2.7-1.7M16 5h2.5A2.5 2.5 0 0 1 19 10c-1.2 0-2.2-.7-2.7-1.7" stroke="currentColor" strokeWidth="2" />
+        <path d="M10 14h4v2l-1 3h-2l-1-3v-2Z" fill="currentColor" />
+      </svg>
+    );
+  }
+  if (kind === "chart") {
+    return (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden className="mt-0.5">
+        <path d="M4 18V6M4 18h16" stroke="currentColor" strokeWidth="2" strokeLinecap="square" />
+        <path d="M8 14v-3M12 14V8M16 14v-6" stroke="currentColor" strokeWidth="2" strokeLinecap="square" />
+      </svg>
+    );
+  }
+  if (kind === "pitch") {
+    return (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden className="mt-0.5">
+        <rect x="3" y="5" width="18" height="14" rx="1" stroke="currentColor" strokeWidth="2" />
+        <path d="M12 5v14M3 12h18" stroke="currentColor" strokeWidth="1.6" />
+        <circle cx="12" cy="12" r="2.4" stroke="currentColor" strokeWidth="1.6" />
+      </svg>
+    );
+  }
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden className="mt-0.5">
+      <path d="M12 3.5 13.9 9h5.6l-4.5 3.4 1.7 5.5L12 14.8 7.3 17.9l1.7-5.5L4.5 9h5.6L12 3.5Z" />
+    </svg>
+  );
 }

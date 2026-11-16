@@ -251,30 +251,48 @@ export function StadiumPlan({
   const sum = STAND_IDS.reduce((n, id) => n + stands[id], 0);
   const ring = BOX[selected];
   return (
-    <div className="relative mt-3">
+    <div className="relative mt-3 overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-b from-[#1a2220] to-[#0d1210] p-2 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
       <svg viewBox={`0 0 ${VB_W} ${VB_H}`} className="h-auto w-full" role="img" aria-label="Stadium plan showing all four stands">
-        <rect width={VB_W} height={VB_H} fill="var(--color-bg)" />
-        <Corner x={28} y={28} w={124} h={96} tier={Math.min(stands.west, stands.north)} fill={primary} />
-        <Corner x={568} y={28} w={124} h={96} tier={Math.min(stands.east, stands.north)} fill={primary} />
-        <Corner x={28} y={356} w={124} h={96} tier={Math.min(stands.west, stands.south)} fill={primary} />
-        <Corner x={568} y={356} w={124} h={96} tier={Math.min(stands.east, stands.south)} fill={primary} />
-        <StandBody id="north" tier={stands.north} seat={secondary} roof={primary} outer="n" />
-        <StandBody id="south" tier={stands.south} seat={secondary} roof={primary} outer="s" />
-        <StandBody id="west" tier={stands.west} seat={secondary} roof={primary} outer="w" />
-        <StandBody id="east" tier={stands.east} seat={secondary} roof={primary} outer="e" />
+        <defs>
+          <linearGradient id="stad-sky" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#24302c" />
+            <stop offset="100%" stopColor="#121816" />
+          </linearGradient>
+          <radialGradient id="stad-glow" cx="50%" cy="48%" r="42%">
+            <stop offset="0%" stopColor={primary} stopOpacity="0.18" />
+            <stop offset="100%" stopColor={primary} stopOpacity="0" />
+          </radialGradient>
+          <filter id="stad-soft" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="0" dy="2" stdDeviation="2" floodOpacity="0.35" />
+          </filter>
+        </defs>
+        <rect width={VB_W} height={VB_H} fill="url(#stad-sky)" />
+        <rect width={VB_W} height={VB_H} fill="url(#stad-glow)" />
+        <g filter="url(#stad-soft)">
+          <Corner x={28} y={28} w={124} h={96} tier={Math.min(stands.west, stands.north)} fill={primary} />
+          <Corner x={568} y={28} w={124} h={96} tier={Math.min(stands.east, stands.north)} fill={primary} />
+          <Corner x={28} y={356} w={124} h={96} tier={Math.min(stands.west, stands.south)} fill={primary} />
+          <Corner x={568} y={356} w={124} h={96} tier={Math.min(stands.east, stands.south)} fill={primary} />
+          <StandBody id="north" tier={stands.north} seat={secondary} roof={primary} outer="n" />
+          <StandBody id="south" tier={stands.south} seat={secondary} roof={primary} outer="s" />
+          <StandBody id="west" tier={stands.west} seat={secondary} roof={primary} outer="w" />
+          <StandBody id="east" tier={stands.east} seat={secondary} roof={primary} outer="e" />
+        </g>
         <g>
           {Array.from({ length: 8 }).map((_, i) => (
             <rect key={i} x={160 + i * 50} y={132} width={50} height={216} fill="var(--color-pitch)" opacity={i % 2 ? 1 : 0.72} />
           ))}
-          <rect x={160} y={132} width={400} height={216} fill="none" stroke="var(--color-fg)" strokeOpacity={0.35} strokeWidth={2} />
-          <line x1={360} y1={132} x2={360} y2={348} stroke="var(--color-fg)" strokeOpacity={0.35} strokeWidth={2} />
-          <circle cx={360} cy={240} r={36} fill="none" stroke="var(--color-fg)" strokeOpacity={0.35} strokeWidth={2} />
-          <circle cx={360} cy={240} r={2.4} fill="var(--color-fg)" fillOpacity={0.55} />
-          <rect x={160} y={186} width={54} height={108} fill="none" stroke="var(--color-fg)" strokeOpacity={0.35} strokeWidth={2} />
-          <rect x={506} y={186} width={54} height={108} fill="none" stroke="var(--color-fg)" strokeOpacity={0.35} strokeWidth={2} />
+          <rect x={160} y={132} width={400} height={216} fill="none" stroke="rgba(244,247,242,0.45)" strokeWidth={2} />
+          <line x1={360} y1={132} x2={360} y2={348} stroke="rgba(244,247,242,0.45)" strokeWidth={2} />
+          <circle cx={360} cy={240} r={36} fill="none" stroke="rgba(244,247,242,0.45)" strokeWidth={2} />
+          <circle cx={360} cy={240} r={2.4} fill="rgba(244,247,242,0.7)" />
+          <rect x={160} y={186} width={54} height={108} fill="none" stroke="rgba(244,247,242,0.45)" strokeWidth={2} />
+          <rect x={506} y={186} width={54} height={108} fill="none" stroke="rgba(244,247,242,0.45)" strokeWidth={2} />
+          <rect x={152} y={226} width={8} height={28} fill="#d6b25e" opacity={0.9} />
+          <rect x={560} y={226} width={8} height={28} fill="#d6b25e" opacity={0.9} />
         </g>
         <Lights heavy={sum >= 8} />
-        <rect x={ring.x - 3} y={ring.y - 3} width={ring.w + 6} height={ring.h + 6} fill="none" stroke="var(--color-primary)" strokeWidth={3} />
+        <rect x={ring.x - 3} y={ring.y - 3} width={ring.w + 6} height={ring.h + 6} fill="none" stroke="var(--color-fc-lime, #b8e03a)" strokeWidth={3} rx={4} />
       </svg>
       {STAND_IDS.map((id) => {
         const b = BOX[id];

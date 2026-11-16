@@ -1,13 +1,23 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useGame } from "@/game/store";
-import { MatchDay, Press, ReportView, Sacked, SeasonView, Title } from "./flows";
+import { MatchDay, ReportView, Sacked, SeasonView, Title } from "./flows";
+import { IntroFilm } from "./IntroFilm";
 import { NewsOverlay } from "./fc/news";
 import { CreateWizard } from "./fc/wizard";
 import { Hub } from "./Hub";
+import { Negotiate } from "./Negotiate";
+
+function NewsGate() {
+  const screen = useGame((s) => s.screen);
+  if (screen === "squad" || screen === "market" || screen === "squadStats" || screen === "squadGoals") return null;
+  return <NewsOverlay />;
+}
 
 export function Game() {
   const booted = useGame((s) => s.booted);
   const phase = useGame((s) => s.phase);
+  /** Every page open: film → welcome → title menu (then Continue / New career). */
+  const [introDone, setIntroDone] = useState(false);
   useEffect(() => {
     useGame.getState().boot();
     const flush = () => {
@@ -20,18 +30,34 @@ export function Game() {
       window.removeEventListener("pagehide", flush);
     };
   }, []);
+  // Legacy saves that landed on the removed Team Talk screen jump into the match
+  useEffect(() => {
+    if (introDone && phase === "press") useGame.getState().toPress();
+  }, [phase, introDone]);
   if (!booted) return <div className="app-bg min-h-dvh" />;
+  if (!introDone) {
+    return (
+      <div className="app-bg min-h-dvh">
+        <IntroFilm
+          onDone={() => {
+            useGame.setState({ phase: "title", notice: null });
+            setIntroDone(true);
+          }}
+        />
+      </div>
+    );
+  }
   return (
     <div className="app-bg min-h-dvh">
       {phase === "title" && <Title />}
       {phase === "create" && <CreateWizard />}
-      {phase === "press" && <Press />}
       {phase === "match" && <MatchDay />}
       {phase === "report" && <ReportView />}
       {phase === "season" && <SeasonView />}
       {phase === "sacked" && <Sacked />}
-      {phase === "hub" && <Hub />}
-      {(phase === "hub" || phase === "season") && <NewsOverlay />}
+      {phase === "negotiate" && <Negotiate />}
+      {(phase === "hub" || phase === "press") && <Hub />}
+      {(phase === "hub" || phase === "season") && <NewsGate />}
     </div>
   );
 }

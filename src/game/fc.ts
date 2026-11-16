@@ -1,6 +1,6 @@
 import type { BudgetMode, ClubManager, FanMood, Philosophy, FormationId, SaveData } from "./types";
 import { clamp, unit } from "./util";
-import { debtLimit } from "./data";
+import { debtLimit, ticketBand } from "./data";
 
 const MGR_NAMES = [
   "V Wilkins",
@@ -20,12 +20,9 @@ const MGR_NAMES = [
   "E Bloom",
 ];
 
-export const CHAIRMAN_AVATARS = [
-  "🧑‍💼", "👨‍🦱", "👨‍🦰", "🧔", "👨‍🦳", "🧑‍🦱", "👨‍🦲", "👨",
-  "🧔‍♂️", "🧑‍🦰", "🧑", "👴", "👱‍♂️", "👨‍🔬", "🧑‍🏫", "🤵",
-  "👩‍💼", "👩‍🦰", "👩‍🦱", "👩‍🦳", "👩", "👱‍♀️", "👩‍🔬", "🧑‍💻",
-  "🤵‍♀️", "👮", "👵", "🧔‍♀️",
-];
+/** Portrait indices — anime AI busts in /public/avatars. */
+export const AVATAR_COUNT = 12;
+export const CHAIRMAN_AVATARS = Array.from({ length: AVATAR_COUNT }, (_, i) => i);
 
 export const KIT_PATTERNS: { id: number; name: string; primary: string; secondary: string; pattern: string }[] = [
   { id: 0, name: "Plain green", primary: "#1f8a5b", secondary: "#efe6d2", pattern: "solid" },
@@ -59,7 +56,10 @@ export const KIT_PATTERNS: { id: number; name: string; primary: string; secondar
 ];
 
 export const ACHIEVEMENT_DEFS: { id: string; label: string }[] = [
-  { id: "promo3", label: "Promotion from Harbor League" },
+  { id: "promo3", label: "Promotion from National League" },
+  { id: "promo4", label: "Promotion from League Two" },
+  { id: "promo5", label: "Promotion from League One" },
+  { id: "promo6", label: "Promotion from Championship" },
   { id: "promo2", label: "Promotion from Marrow Championship" },
   { id: "champ1", label: "Champions of the Tyrone Premier" },
   { id: "top4_1", label: "Top four in the Tyrone Premier" },
@@ -205,18 +205,58 @@ export function outletUpgradeCost(level: number) {
   return [25_000, 60_000, 140_000, 320_000][level] ?? 0;
 }
 
+/** Migrate old 1–5 facility levels into FC-style ratings (20–99). */
+export function facRating(raw: number) {
+  if (!Number.isFinite(raw) || raw <= 0) return 20;
+  if (raw <= 5) return Math.round(raw * 20);
+  return Math.max(20, Math.min(99, Math.round(raw)));
+}
+
+/** Starting training / youth rating from current squad or youth quality. */
+export function facilityFloorFromPlayers<T extends { age: number; clubId: string; loan?: string | null }>(
+  players: T[],
+  clubId: string,
+  kind: "training" | "academy",
+  overall: (p: T) => number,
+) {
+  const squad = players.filter((p) => p.clubId === clubId && p.loan !== "out");
+  if (!squad.length) return 20;
+  if (kind === "training") {
+    const avg = squad.reduce((s, p) => s + overall(p), 0) / squad.length;
+    return Math.max(20, Math.min(72, Math.round(avg * 0.88)));
+  }
+  const youth = squad.filter((p) => p.age <= 21);
+  const pool = youth.length >= 3 ? youth : squad.filter((p) => p.age <= 23);
+  const use = pool.length ? pool : squad;
+  const avg = use.reduce((s, p) => s + overall(p), 0) / use.length;
+  return Math.max(20, Math.min(68, Math.round(avg * 0.92)));
+}
+
+/** Effective “level” (1–5) for growth formulas that still expect a tier. */
+export function facTier(raw: number) {
+  return Math.max(1, Math.min(5, Math.round(facRating(raw) / 20)));
+}
+
 export function facilityStepCost(from: number, to: number) {
+  const a = facRating(from);
+  const b = facRating(to);
   let cost = 0;
-  for (let l = from; l < to; l++) cost += upgradeStepCost(l);
+  for (let r = a; r < b; r++) cost += facilityPointCost(r);
   return cost;
+}
+
+/** One-point coaching/training upgrade cost (FC: ~£222 at rating 20). */
+export function facilityPointCost(rating: number) {
+  return Math.max(50, Math.round(rating * 11.1));
 }
 
 export function upgradeStepCost(level: number) {
   return Math.round(80_000 * Math.pow(1.55, level));
 }
 
-export function weeklyFacilityCost(level: number) {
-  return Math.round(18 + level * 4);
+/** Weekly wage for a facility rating (FC: rating 20 → £22). */
+export function weeklyFacilityCost(rating: number) {
+  return Math.max(18, Math.round(facRating(rating) + 2));
 }
 
 export const SUPER_STADIUM_COST = 250_000_000;
@@ -238,11 +278,21 @@ export function managerAppointedCard(mgr: ClubManager, clubName: string): SaveDa
 
 export function buildSeasonOpenNews(state: SaveData): SaveData["newsQueue"] {
   const wages = state.players.filter((p) => p.clubId === "user" && p.loan !== "out").reduce((s, p) => s + p.wage, 0);
+  const shirt = state.tier === 1 ? 4_500_000 : state.tier === 2 ? 1_200_000 : state.tier === 3 ? 420_000 : state.tier === 4 ? 180_000 : 80_000;
+  const byTier: Record<number, [string, string, string]> = {
+    1: ["Emirates", "Standard Chartered", "AIA"],
+    2: ["Sky Bet", "Utilita", "Cinch"],
+    3: ["Vanarama", "Ideal Heating", "Bet365"],
+    4: ["Utilita", "BoyleSports", "32Red"],
+    5: ["Vanarama", "Holsten", "Carlsberg"],
+  };
+  const names = byTier[state.tier] ?? byTier[5]!;
   const sponsors = [
-    { name: "Harbor Grain", fee: 180_000, untilSeason: state.season + 2 },
-    { name: "Quay Motors", fee: 140_000, untilSeason: state.season + 3 },
-    { name: "Northglass Tools", fee: 220_000, untilSeason: state.season + 1 },
+    { name: names[0], fee: Math.round(shirt * 0.85), untilSeason: state.season + 2 },
+    { name: names[1], fee: Math.round(shirt * 0.7), untilSeason: state.season + 3 },
+    { name: names[2], fee: shirt, untilSeason: state.season + 1 },
   ];
+  const tickets = ticketBand(state.tier);
   const rival =
     state.clubs.find((c) => c.id === state.rivalClubId)?.name ??
     state.clubs.find((c) => c.id !== "user")?.name ??
@@ -267,15 +317,16 @@ export function buildSeasonOpenNews(state: SaveData): SaveData["newsQueue"] {
       id: `tickets-${state.season}`,
       kind: "tickets",
       title: "Set ticket prices",
-      body: "Higher prices swell the gate when crowds come. Lower prices keep the terrace loud. Typical Harbor League tickets sit between £3 and £7.",
-      min: 3,
-      max: 7,
+      body: `A full house at £${tickets.suggested} keeps the books honest. Go higher and the terrace thins out. This division sits between £${tickets.min} and £${tickets.max}.`,
+      min: tickets.min,
+      max: tickets.max,
+      suggested: tickets.suggested,
     },
     {
       id: `friendly-${state.season}`,
       kind: "continue",
       title: "Pre-season friendly",
-      body: `${club?.name ?? "Your club"} host ${rival} in a pre-season friendly at ${state.stadiumName || club?.stadium || "home"}. Division tag: ${state.tier === 3 ? "Harbor League" : state.tier === 2 ? "Championship" : "Premier"}.`,
+      body: `${club?.name ?? "Your club"} play ${rival} in a pre-season friendly at ${state.stadiumName || club?.stadium || "home"} before the league starts. Sim or watch it from the desk.`,
       cta: "Continue",
     },
     {

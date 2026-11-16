@@ -3,6 +3,7 @@ import type { BuildUp, FormationId, LineHeight } from "./types";
 import { dutyFit, ovr, pickXi } from "./players";
 import type {
   LiveMatch,
+  MatchScene,
   Mentality,
   Player,
   Position,
@@ -96,10 +97,18 @@ function sideProfile(
     midM += 0.02;
   }
   const avg = (sum: number, n: number) => (n ? sum / n : 55);
+  const ages = ids.map((id) => map.get(id)?.age ?? 0).filter((age) => age > 0);
+  const old = ages.filter((age) => age >= 33).length;
+  const kids = ages.filter((age) => age <= 20).length;
+  const prime = ages.filter((age) => age >= 24 && age <= 30).length;
+  let ageMul = 1;
+  if (old >= 4) ageMul -= 0.045;
+  if (kids >= 6) ageMul -= 0.03;
+  if (prime >= 6) ageMul += 0.035;
   return {
-    defAvg: avg(def, defN) * defM,
-    midAvg: avg(mid, midN) * midM + spirit * 0.35,
-    atkAvg: avg(atk, atkN) * atkM + spirit * 0.45,
+    defAvg: avg(def, defN) * defM * ageMul,
+    midAvg: avg(mid, midN) * midM * ageMul + spirit * 0.35,
+    atkAvg: avg(atk, atkN) * atkM * ageMul + spirit * 0.45,
     attackers: attackers.length ? attackers : mids,
     creators: [...attackers, ...mids],
     gk: ids
@@ -112,12 +121,14 @@ function placeDots(live: LiveMatch, attacking: "home" | "away" | "mid") {
   const dots: Record<string, { x: number; y: number }> = {};
   const ball =
     attacking === "home"
-      ? { x: 68 + unit(live.seed, live.minute, 1) * 18, y: 18 + unit(live.seed, live.minute, 2) * 64 }
+      ? { x: 70 + unit(live.seed, live.minute, 1) * 20, y: 16 + unit(live.seed, live.minute, 2) * 68 }
       : attacking === "away"
-        ? { x: 14 + unit(live.seed, live.minute, 1) * 18, y: 18 + unit(live.seed, live.minute, 2) * 64 }
+        ? { x: 10 + unit(live.seed, live.minute, 1) * 20, y: 16 + unit(live.seed, live.minute, 2) * 68 }
         : { x: 42 + unit(live.seed, live.minute, 1) * 16, y: 30 + unit(live.seed, live.minute, 2) * 40 };
   const paint = (ids: string[], form: LiveMatch["homeForm"], side: "home" | "away") => {
     const slots = FORMATIONS[form];
+    const lean = attacking === side ? 0.38 : attacking === "mid" ? 0.16 : 0.1;
+    const push = attacking === "home" ? (side === "home" ? 8 : -4) : attacking === "away" ? (side === "away" ? -8 : 4) : 0;
     ids.forEach((id, i) => {
       const slot = slots[i];
       if (!slot || live.off.includes(id)) return;
@@ -126,8 +137,8 @@ function placeDots(live: LiveMatch, attacking: "home" | "away" | "mid") {
       const jx = (unit(live.seed, live.minute, i, side === "home" ? 3 : 4) - 0.5) * 7;
       const jy = (unit(live.seed, live.minute, i, 5) - 0.5) * 8;
       dots[id] = {
-        x: clamp(x0 * 0.82 + ball.x * 0.18 + jx, 5, 95),
-        y: clamp(y0 * 0.78 + ball.y * 0.22 + jy, 7, 93),
+        x: clamp(x0 * (1 - lean) + ball.x * lean + jx + push, 5, 95),
+        y: clamp(y0 * (1 - lean * 0.7) + ball.y * lean * 0.7 + jy, 7, 93),
       };
     });
   };
@@ -227,7 +238,8 @@ export function createLive(state: SaveData, fixtureId: string, tone: PressTone):
     onA: 0,
     xgH: 0,
     xgA: 0,
-    possH: 0,
+    possH: 50,
+    attackSide: "home",
     homeXi: homePick.xi,
     awayXi: awayPick.xi,
     homeBench: homePick.bench,
@@ -246,11 +258,12 @@ export function createLive(state: SaveData, fixtureId: string, tone: PressTone):
       {
         minute: 0,
         kind: "info",
-        text: `Kickoff at ${homeClub?.stadium ?? "the ground"}. ${homeClub?.name ?? "Home"} against ${awayClub?.name ?? "Away"}.`,
+        text: `The teams emerge at ${homeClub?.stadium ?? "the ground"}. ${homeClub?.name ?? "Home"} against ${awayClub?.name ?? "Away"}.`,
       },
     ],
     ball: { x: 50, y: 50 },
     dots: {},
+    scene: null,
     finished: false,
     subsH: 0,
     subsA: 0,
@@ -258,15 +271,21 @@ export function createLive(state: SaveData, fixtureId: string, tone: PressTone):
     wentOff,
     spirit: tone === "bold" ? 2.4 : tone === "deflect" ? 1 : 0.4,
     pressTone: tone,
-    paused: false,
+    paused: true,
     speed: 1,
     shouts: [],
     userSide,
     period: "regulation",
+    stage: "tunnel",
+    htTalk: null,
+    htPlan: null,
     penHome: 0,
     penAway: 0,
     penKicks: [],
     penNext: "home",
+    restartSide: null,
+    phaseChain: null,
+    addedTime: 0,
   };
   const placed = placeDots(draft, "mid");
   draft.dots = placed.dots;
@@ -311,6 +330,8 @@ function cloneLive(live: LiveMatch): LiveMatch {
 function finishMatch(next: LiveMatch, pushLog: (text: string, kind: LiveMatch["log"][number]["kind"]) => void) {
   next.finished = true;
   next.paused = true;
+  next.restartSide = null;
+  next.stage = "live";
   if (next.period === "pens") {
     pushLog(
       `Penalties over. ${next.homeScore}–${next.awayScore} after ${next.penHome}–${next.penAway} on spot kicks.`,
@@ -400,13 +421,26 @@ export function stepMatch(live: LiveMatch, state: SaveData): LiveMatch {
   if (live.finished) return live;
   if (live.period === "pens") return stepPenalty(live, state);
 
-  const cap = live.period === "et" ? 120 : 90;
-  if (live.minute >= cap) return live;
+  const map = byId(state.players);
+  /* Centre restart after a goal — same as real football */
+  if (live.restartSide && !live.finished) {
+    const restarted = applyKickOffScene({ ...live, restartSide: null, paused: false }, live.restartSide);
+    return { ...restarted, restartSide: null, phaseChain: "kickoff" };
+  }
+
+  const hardCap =
+    live.period === "et" ? 120 + Math.max(live.addedTime || 0, 0) : 90 + Math.max(live.addedTime || 0, 0);
+  if (live.minute >= hardCap && (live.period !== "regulation" || (live.addedTime || 0) > 0 || live.minute > 90)) {
+    return live;
+  }
 
   const minute = live.minute + 1;
-  const map = byId(state.players);
   const next = cloneLive(live);
   next.minute = minute;
+  next.scene = null;
+  if (next.restartSide == null) next.restartSide = null;
+  if (next.phaseChain === undefined) next.phaseChain = null;
+  if (next.addedTime == null) next.addedTime = 0;
 
   if (minute > 58) {
     if (next.userSide !== "away") {
@@ -489,13 +523,26 @@ export function stepMatch(live: LiveMatch, state: SaveData): LiveMatch {
   if (next.homeMentality === "defend") pHome -= 0.03;
   if (next.awayMentality === "attack") pHome -= 0.03;
   pHome = clamp(pHome, 0.34, 0.66);
-  const attackSide: "home" | "away" = unit(next.seed, minute, 7) < pHome ? "home" : "away";
-  if (attackSide === "home") next.possH += 1;
+  /* Keep the ball more often — teams recycle possession like real matches */
+  const keepBall = unit(next.seed, minute, 6) < 0.62;
+  let attackSide: "home" | "away" =
+    keepBall && live.attackSide ? live.attackSide : unit(next.seed, minute, 7) < pHome ? "home" : "away";
+  /* After a kick-off / goal-kick, that side builds from the back */
+  if (live.phaseChain === "kickoff" || live.phaseChain === "goalkick") {
+    attackSide = live.attackSide;
+  }
+  next.attackSide = attackSide;
+  const prevHomeTicks = (next.possH / 100) * (minute - 1);
+  const homeTicks = prevHomeTicks + (attackSide === "home" ? 1 : 0);
+  next.possH = Math.round((homeTicks / minute) * 100);
   const atk = attackSide === "home" ? home : away;
   const defAvg = attackSide === "home" ? away.defAvg : home.defAvg;
   const atkMods = attackSide === "home" ? homeMods : awayMods;
   const defMods = attackSide === "home" ? awayMods : homeMods;
-  const chanceP = clamp(0.12 + (atk.atkAvg - defAvg) / 170 + atkMods.chance + defMods.exposed, 0.06, 0.26);
+  const chain = live.phaseChain;
+  const chainBoost =
+    chain === "build" || chain === "cross" || chain === "shot" ? 0.08 : chain === "kickoff" || chain === "goalkick" ? 0.04 : 0;
+  const chanceP = clamp(0.1 + (atk.atkAvg - defAvg) / 170 + atkMods.chance + defMods.exposed + chainBoost, 0.05, 0.32);
   const roll = unit(next.seed, minute, 8);
 
   const pushLog = (text: string, kind: LiveMatch["log"][number]["kind"]) => {
@@ -555,7 +602,26 @@ export function stepMatch(live: LiveMatch, state: SaveData): LiveMatch {
         `${nameOf(map, shooter)} scores${assistName ? `, ${assistName} with the pass` : ""}. ${hs}–${as}.`,
         "goal",
       );
-      next.ball = attackSide === "home" ? { x: 92, y: 50 } : { x: 8, y: 50 };
+      const gkId = attackSide === "home" ? away.gk : home.gk;
+      const strikeX = attackSide === "home" ? 82 : 18;
+      const netX = attackSide === "home" ? 97.5 : 2.5;
+      const netY = 42 + unit(next.seed, minute, 41) * 16;
+      next.scene = {
+        minute,
+        kind: "goal",
+        text: `GOAL. ${nameOf(map, shooter)}`,
+        actorId: shooter,
+        mateId: assistId,
+        keeperId: gkId,
+        side: attackSide,
+        freeze: true,
+        via: "open",
+        ballFrom: { x: strikeX + (attackSide === "home" ? 3 : -3), y: 50 },
+      };
+      next.ball = { x: netX, y: netY };
+      /* Conceding team restarts from the centre circle */
+      next.restartSide = attackSide === "home" ? "away" : "home";
+      next.phaseChain = "goal";
     } else if (onTarget) {
       next.ratings[shooter] = clamp((next.ratings[shooter] ?? 6.3) + 0.12, 3, 10);
       const gk = attackSide === "home" ? away.gk : home.gk;
@@ -566,20 +632,120 @@ export function stepMatch(live: LiveMatch, state: SaveData): LiveMatch {
           : `${nameOf(map, shooter)} forces a save.`,
         "chance",
       );
+      next.scene = {
+        minute,
+        kind: "save",
+        text: gk ? `${nameOf(map, gk)} saves` : "Saved",
+        actorId: shooter,
+        keeperId: gk,
+        side: attackSide,
+        freeze: true,
+      };
       next.ball = attackSide === "home" ? { x: 86, y: 48 } : { x: 14, y: 52 };
+      next.phaseChain = "save";
     } else {
       next.ratings[shooter] = clamp((next.ratings[shooter] ?? 6.3) + 0.04, 3, 10);
       pushLog(`${nameOf(map, shooter)} leans back and misses the target.`, "chance");
+      next.scene = {
+        minute,
+        kind: "miss",
+        text: `${nameOf(map, shooter)} misses`,
+        actorId: shooter,
+        side: attackSide,
+        freeze: false,
+      };
       next.ball = attackSide === "home" ? { x: 80, y: unit(next.seed, minute, 13) > 0.5 ? 10 : 90 } : { x: 20, y: 50 };
+      next.phaseChain = "miss";
     }
-  } else if (roll < chanceP + 0.018) {
+  } else if (roll < chanceP + 0.045) {
+    // Foul / free kick / penalty / cards — whistle always blows
     const pool = attackSide === "home" ? next.awayXi : next.homeXi;
     const form = attackSide === "home" ? next.awayForm : next.homeForm;
     const candidates = pool
       .map((id, i) => ({ id, pos: form ? FORMATIONS[form][i]?.pos : undefined }))
       .filter((x) => x.pos && x.pos !== "GK" && !next.off.includes(x.id));
     const fouler = candidates[Math.floor(unit(next.seed, minute, 14) * candidates.length)];
-    if (fouler) {
+    const atkIds = attackSide === "home" ? next.homeXi : next.awayXi;
+    const victimId = atk.attackers[0]?.id ?? atkIds[Math.floor(unit(next.seed, minute, 23) * atkIds.length)] ?? "";
+    const foulSide: "home" | "away" = attackSide === "home" ? "away" : "home";
+    const inBox = unit(next.seed, minute, 24) < 0.14;
+    if (fouler && inBox) {
+      const takerId = victimId || fouler.id;
+      const gkId = attackSide === "home" ? away.gk : home.gk;
+      const spotX = attackSide === "home" ? 88 : 12;
+      const netX = attackSide === "home" ? 97.5 : 2.5;
+      pushLog(`Penalty. ${nameOf(map, fouler.id)} brings ${nameOf(map, victimId)} down in the area.`, "chance");
+      const penXg = 0.76;
+      if (attackSide === "home") {
+        next.shotsH += 1;
+        next.onH += 1;
+        next.xgH = Math.round((next.xgH + penXg) * 100) / 100;
+      } else {
+        next.shotsA += 1;
+        next.onA += 1;
+        next.xgA = Math.round((next.xgA + penXg) * 100) / 100;
+      }
+      if (unit(next.seed, minute, 25) < penXg) {
+        if (attackSide === "home") next.homeScore += 1;
+        else next.awayScore += 1;
+        next.scorers = [
+          ...next.scorers,
+          { name: nameOf(map, takerId), minute, side: attackSide, playerId: takerId },
+        ];
+        next.ratings[takerId] = clamp((next.ratings[takerId] ?? 6.3) + 0.9, 3, 10);
+        pushLog(`${nameOf(map, takerId)} scores from the spot. ${next.homeScore}–${next.awayScore}.`, "goal");
+        const netY = 44 + unit(next.seed, minute, 42) * 12;
+        next.scene = {
+          minute,
+          kind: "goal",
+          text: `GOAL from the spot. ${nameOf(map, takerId)}`,
+          actorId: takerId,
+          mateId: fouler.id,
+          keeperId: gkId,
+          side: attackSide,
+          freeze: true,
+          via: "penalty",
+          ballFrom: { x: spotX, y: 50 },
+        };
+        next.ball = { x: netX, y: netY };
+        next.restartSide = attackSide === "home" ? "away" : "home";
+        next.phaseChain = "goal";
+      } else {
+        if (gkId) next.ratings[gkId] = clamp((next.ratings[gkId] ?? 6.3) + 0.35, 3, 10);
+        pushLog(gkId ? `${nameOf(map, gkId)} saves the penalty.` : "Penalty missed.", "chance");
+        next.scene = {
+          minute,
+          kind: "save",
+          text: gkId ? `${nameOf(map, gkId)} saves the penalty` : "Penalty missed",
+          actorId: takerId,
+          mateId: fouler.id,
+          keeperId: gkId,
+          side: attackSide,
+          freeze: true,
+          via: "penalty",
+          ballFrom: { x: spotX, y: 50 },
+        };
+        next.ball = { x: attackSide === "home" ? 93 : 7, y: 48 + unit(next.seed, minute, 43) * 8 };
+        next.phaseChain = "save";
+      }
+      const y = (next.yellow[fouler.id] ?? 0) + 1;
+      next.yellow[fouler.id] = y;
+      if (y >= 2 || unit(next.seed, minute, 26) < 0.2) {
+        next.off = [...next.off, fouler.id];
+        next.wentOff[fouler.id] = minute;
+        pushLog(`Red card. ${nameOf(map, fouler.id)} is sent off.`, "card");
+      } else {
+        pushLog(`Yellow card for ${nameOf(map, fouler.id)}.`, "card");
+      }
+    } else if (fouler) {
+      const fkX = attackSide === "home" ? 62 + unit(next.seed, minute, 27) * 12 : 38 - unit(next.seed, minute, 27) * 12;
+      const fkY = 28 + unit(next.seed, minute, 44) * 44;
+      const kicker =
+        victimId ||
+        atk.creators[0]?.id ||
+        atk.attackers[0]?.id ||
+        (attackSide === "home" ? next.homeXi[7] : next.awayXi[7]) ||
+        "";
       const y = (next.yellow[fouler.id] ?? 0) + 1;
       next.yellow[fouler.id] = y;
       if (y >= 2 || unit(next.seed, minute, 15) < 0.045) {
@@ -587,14 +753,100 @@ export function stepMatch(live: LiveMatch, state: SaveData): LiveMatch {
         next.wentOff[fouler.id] = minute;
         next.ratings[fouler.id] = clamp((next.ratings[fouler.id] ?? 6.3) - 0.7, 3, 10);
         pushLog(`Red card. ${nameOf(map, fouler.id)} is off.`, "card");
-      } else if (unit(next.seed, minute, 16) < 0.55) {
-        next.ratings[fouler.id] = clamp((next.ratings[fouler.id] ?? 6.3) - 0.28, 3, 10);
-        pushLog(`Yellow card for ${nameOf(map, fouler.id)}.`, "card");
+        next.scene = {
+          minute,
+          kind: "card",
+          text: `Red card. ${nameOf(map, fouler.id)}`,
+          actorId: fouler.id,
+          mateId: kicker || undefined,
+          side: foulSide,
+          freeze: true,
+        };
+        next.ball = { x: fkX, y: fkY };
       } else {
-        pushLog(`Free kick. ${nameOf(map, fouler.id)} is spoken to.`, "info");
+        if (unit(next.seed, minute, 16) < 0.55) {
+          next.ratings[fouler.id] = clamp((next.ratings[fouler.id] ?? 6.3) - 0.28, 3, 10);
+          pushLog(`Foul and yellow. ${nameOf(map, fouler.id)}. Free kick.`, "card");
+        } else {
+          pushLog(`Free kick. ${nameOf(map, fouler.id)} is spoken to.`, "info");
+        }
+        const targetX = attackSide === "home" ? 92 : 8;
+        const targetY = 40 + unit(next.seed, minute, 45) * 20;
+        next.scene = {
+          minute,
+          kind: "freekick",
+          text: `Free kick. ${nameOf(map, kicker)}`,
+          actorId: kicker,
+          mateId: fouler.id,
+          keeperId: attackSide === "home" ? away.gk : home.gk,
+          side: attackSide,
+          freeze: true,
+          via: "freekick",
+          ballFrom: { x: fkX, y: fkY },
+        };
+        next.ball = { x: targetX, y: targetY };
       }
     }
-  } else if (roll < chanceP + 0.022) {
+  } else if (roll < chanceP + 0.062) {
+    // Offside
+    const flagId = atk.attackers[0]?.id ?? (attackSide === "home" ? next.homeXi[9] : next.awayXi[9]) ?? "";
+    pushLog(`Offside. Flag up against ${nameOf(map, flagId)}.`, "info");
+    next.scene = {
+      minute,
+      kind: "offside",
+      text: `Offside. ${nameOf(map, flagId)}`,
+      actorId: flagId,
+      side: attackSide,
+      freeze: true,
+    };
+    next.ball = attackSide === "home" ? { x: 78, y: 45 } : { x: 22, y: 55 };
+  } else if (roll < chanceP + 0.08) {
+    // Corner
+    const kicker = atk.creators[0]?.id ?? atk.attackers[0]?.id ?? "";
+    const nearFlag = unit(next.seed, minute, 28) > 0.5;
+    const cornerY = nearFlag ? 6 : 94;
+    const boxY = nearFlag ? 38 : 62;
+    pushLog(`Corner to ${attackSide === "home" ? "the home side" : "the visitors"}.`, "chance");
+    next.scene = {
+      minute,
+      kind: "corner",
+      text: `Corner. ${nameOf(map, kicker)}`,
+      actorId: kicker,
+      mateId: atk.attackers[0]?.id,
+      keeperId: attackSide === "home" ? away.gk : home.gk,
+      side: attackSide,
+      freeze: true,
+      via: "corner",
+      ballFrom: { x: attackSide === "home" ? 98 : 2, y: cornerY },
+    };
+    next.ball = { x: attackSide === "home" ? 88 : 12, y: boxY };
+  } else if (roll < chanceP + 0.095) {
+    // Throw-in
+    const pool = attackSide === "home" ? next.homeXi : next.awayXi;
+    const form = attackSide === "home" ? next.homeForm : next.awayForm;
+    const throwers = pool
+      .map((id, i) => ({ id, pos: FORMATIONS[form][i]?.pos }))
+      .filter((x) => x.pos && x.pos !== "GK" && !next.off.includes(x.id));
+    const thrower = throwers[Math.floor(unit(next.seed, minute, 46) * throwers.length)]?.id ?? pool[2] ?? "";
+    const top = unit(next.seed, minute, 47) > 0.5;
+    const tx = 25 + unit(next.seed, minute, 48) * 50;
+    const ty = top ? 3 : 97;
+    pushLog(`Throw-in. ${nameOf(map, thrower)}.`, "info");
+    next.scene = {
+      minute,
+      kind: "throwin",
+      text: `Throw-in. ${nameOf(map, thrower)}`,
+      actorId: thrower,
+      mateId: atk.creators[0]?.id ?? atk.attackers[0]?.id,
+      side: attackSide,
+      freeze: true,
+      ballFrom: { x: tx, y: ty },
+    };
+    next.ball = {
+      x: clamp(tx + (attackSide === "home" ? 8 : -8), 12, 88),
+      y: top ? 18 : 82,
+    };
+  } else if (roll < chanceP + 0.105) {
     const ids = attackSide === "home" ? next.homeXi : next.awayXi;
     const form = attackSide === "home" ? next.homeForm : next.awayForm;
     const victim = ids
@@ -610,6 +862,14 @@ export function stepMatch(live: LiveMatch, state: SaveData): LiveMatch {
       const bench = side === "home" ? next.homeBench : next.awayBench;
       const subs = side === "home" ? next.subsH : next.subsA;
       const forced = forceSub(next, map, side, hit.id, bench, subs, minute);
+      next.scene = {
+        minute,
+        kind: "foul",
+        text: `Injury stoppage. Whistle.`,
+        actorId: hit.id,
+        side,
+        freeze: true,
+      };
       if (forced) {
         pushLog(`${nameOf(map, hit.id)} is hurt. ${nameOf(map, forced)} comes on.`, "sub");
       } else {
@@ -620,10 +880,33 @@ export function stepMatch(live: LiveMatch, state: SaveData): LiveMatch {
 
   if (minute === 45) {
     next.paused = true;
-    pushLog(`Half-time. ${next.homeScore}–${next.awayScore}.`, "info");
+    next.stage = "ht-talk";
+    next.addedTime = 0;
+    next.restartSide = null;
+    const plan = buildHalfTimePlan(next, map, state);
+    next.htPlan = plan.changes;
+    next.htTalk = plan.talk;
+    pushLog(`Half-time. ${next.homeScore}–${next.awayScore}. ${state.manager.name} gathers the side.`, "info");
   }
-  if (minute === 90) {
-    if (next.competition === "cup" && next.homeScore === next.awayScore) {
+
+  /* Stoppage time at ninety, then full time / extra time */
+  if (minute === 90 && next.period === "regulation" && !next.addedTime) {
+    next.addedTime = 1 + Math.floor(unit(next.seed, minute, 90) * 4);
+    pushLog(`Minimum ${next.addedTime} minute${next.addedTime === 1 ? "" : "s"} of added time.`, "info");
+  }
+  const regEnd = 90 + (next.period === "regulation" ? next.addedTime : 0);
+  if (next.period === "regulation" && minute >= regEnd && minute >= 90 && next.addedTime > 0) {
+    if ((next.competition === "cup" || next.competition === "playoff") && next.homeScore === next.awayScore) {
+      next.period = "et";
+      next.paused = true;
+      next.addedTime = 0;
+      pushLog(`Level after ninety. Extra time.`, "info");
+    } else {
+      finishMatch(next, pushLog);
+    }
+  } else if (minute === 90 && next.period === "regulation" && next.addedTime === 0) {
+    /* safety: no stoppage rolled */
+    if ((next.competition === "cup" || next.competition === "playoff") && next.homeScore === next.awayScore) {
       next.period = "et";
       next.paused = true;
       pushLog(`Level at ninety. Extra time.`, "info");
@@ -631,8 +914,10 @@ export function stepMatch(live: LiveMatch, state: SaveData): LiveMatch {
       finishMatch(next, pushLog);
     }
   }
+
   if (minute === 105 && next.period === "et") {
     next.paused = true;
+    next.addedTime = 0;
     pushLog(`Extra-time break. ${next.homeScore}–${next.awayScore}.`, "info");
   }
   if (minute === 120 && next.period === "et") {
@@ -653,8 +938,217 @@ export function stepMatch(live: LiveMatch, state: SaveData): LiveMatch {
   aiSub(next, map, "away", minute);
 
   const placed = placeDots(next, attackSide);
-  if (!next.ball || next.ball.x === live.ball.x) next.ball = placed.ball;
   next.dots = placed.dots;
+
+  /* Goal kick for the defending keeper after a save / miss */
+  if (!next.scene && (chain === "save" || chain === "miss")) {
+    const defSide: "home" | "away" = attackSide === "home" ? "away" : "home";
+    const def = defSide === "home" ? home : away;
+    const gkId = def.gk ?? (defSide === "home" ? next.homeXi[0] : next.awayXi[0]) ?? "";
+    const outX = defSide === "home" ? 28 : 72;
+    pushLog(`Goal kick. ${nameOf(map, gkId)} restarts.`, "info");
+    next.scene = {
+      minute,
+      kind: "goalkick",
+      text: `Goal kick. ${nameOf(map, gkId)}`,
+      actorId: gkId,
+      keeperId: gkId,
+      side: defSide,
+      freeze: true,
+      ballFrom: { x: defSide === "home" ? 6 : 94, y: 50 },
+    };
+    next.ball = { x: outX, y: 35 + unit(next.seed, minute, 51) * 30 };
+    next.attackSide = defSide;
+    next.phaseChain = "goalkick";
+  }
+
+  if (!next.scene) {
+    const ids = attackSide === "home" ? next.homeXi : next.awayXi;
+    const creators = atk.creators.map((c) => c.id);
+    const attackers = atk.attackers.map((a) => a.id);
+    let kind: MatchScene["kind"] = "build";
+    let actorId = ids[Math.floor(unit(next.seed, minute, 21) * ids.length)] ?? ids[0] ?? "";
+    /* Attack progression: build → wide cross → shot */
+    if (chain === "build" || chain === "goalkick" || chain === "kickoff") {
+      kind = unit(next.seed, minute, 22) < 0.45 ? "cross" : unit(next.seed, minute, 22) < 0.75 ? "build" : "shot";
+      actorId =
+        kind === "cross"
+          ? creators[0] ?? actorId
+          : kind === "shot"
+            ? attackers[0] ?? actorId
+            : creators[0] ?? actorId;
+    } else if (chain === "cross") {
+      kind = unit(next.seed, minute, 22) < 0.55 ? "shot" : "build";
+      actorId = kind === "shot" ? attackers[0] ?? actorId : creators[0] ?? actorId;
+    } else if (chain === "shot") {
+      kind = "build";
+      actorId = creators[0] ?? actorId;
+    } else {
+      kind = unit(next.seed, minute, 22) > 0.7 ? "cross" : "build";
+      actorId = kind === "cross" ? creators[0] ?? actorId : actorId;
+    }
+    const text =
+      kind === "cross"
+        ? "Ball switched wide — cross coming in."
+        : kind === "shot"
+          ? "Shot brewing at the edge of the box."
+          : "Recycled through midfield.";
+    next.scene = {
+      minute,
+      kind,
+      text,
+      actorId,
+      mateId: kind === "shot" ? creators[0] : attackers[0],
+      keeperId: attackSide === "home" ? away.gk : home.gk,
+      side: attackSide,
+      freeze: kind === "shot",
+    };
+    next.phaseChain = kind;
+  } else if (!next.phaseChain) {
+    next.phaseChain = next.scene.kind;
+  }
+  if (!next.ball) next.ball = placed.ball;
+  layScene(next);
+  return next;
+}
+
+function layScene(next: LiveMatch) {
+  const scene = next.scene;
+  if (!scene) return;
+  const homeAtt = scene.side === "home";
+  const boxX = homeAtt ? 82 : 18;
+  const goalX = homeAtt ? 94 : 6;
+  const put = (id: string | undefined, x: number, y: number) => {
+    if (!id || !next.dots[id]) return;
+    next.dots[id] = { x, y };
+  };
+  const wallIds = (defending: "home" | "away", n: number) => {
+    const xi = defending === "home" ? next.homeXi : next.awayXi;
+    return xi.filter((id) => id !== scene.keeperId && !next.off.includes(id)).slice(0, n);
+  };
+
+  if (scene.kind === "kickoff") {
+    put(scene.actorId, 49.2, 50);
+    put(scene.mateId, 52.5, 47);
+    const homeXi = next.homeXi.filter((id) => id !== scene.actorId && id !== scene.mateId && !next.off.includes(id));
+    const awayXi = next.awayXi.filter((id) => id !== scene.actorId && id !== scene.mateId && !next.off.includes(id));
+    homeXi.forEach((id, i) => {
+      if (next.dots[id]) next.dots[id] = { x: 28 + (i % 5) * 4.5, y: 18 + Math.floor(i / 5) * 28 };
+    });
+    awayXi.forEach((id, i) => {
+      if (next.dots[id]) next.dots[id] = { x: 58 + (i % 5) * 4.5, y: 18 + Math.floor(i / 5) * 28 };
+    });
+    if (!scene.ballFrom) scene.ballFrom = { x: 50, y: 50 };
+    next.ball = { x: homeAtt ? 56 : 44, y: 48 };
+  } else if (scene.kind === "build") {
+    put(scene.actorId, homeAtt ? 58 : 42, 48);
+    next.ball = { x: homeAtt ? 63 : 37, y: 50 };
+  } else if (scene.kind === "cross") {
+    put(scene.actorId, homeAtt ? 74 : 26, 16);
+    next.ball = { x: homeAtt ? 78 : 22, y: 18 };
+  } else if (scene.kind === "foul" || scene.kind === "card" || scene.kind === "tackle") {
+    put(scene.actorId, homeAtt ? 55 : 45, 46);
+    put(scene.mateId, homeAtt ? 60 : 40, 42);
+    next.ball = { x: homeAtt ? 58 : 42, y: 50 };
+  } else if (scene.kind === "offside") {
+    put(scene.actorId, homeAtt ? 82 : 18, 42);
+    next.ball = { x: homeAtt ? 78 : 22, y: 48 };
+  } else if (scene.kind === "corner") {
+    const from = scene.ballFrom ?? { x: homeAtt ? 98 : 2, y: 8 };
+    put(scene.actorId, from.x > 50 ? 96 : 4, from.y < 50 ? 8 : 92);
+    put(scene.mateId, homeAtt ? 86 : 14, 48);
+    put(scene.keeperId, goalX, 50);
+    const pack = (homeAtt ? next.homeXi : next.awayXi).filter((id) => id !== scene.actorId && !next.off.includes(id)).slice(0, 4);
+    pack.forEach((id, i) => put(id, homeAtt ? 84 + (i % 2) * 4 : 16 - (i % 2) * 4, 36 + Math.floor(i / 2) * 14));
+    if (!scene.ballFrom) scene.ballFrom = { ...from };
+  } else if (scene.kind === "penalty" || (scene.kind === "goal" && scene.via === "penalty") || (scene.kind === "save" && scene.via === "penalty")) {
+    const spotX = homeAtt ? 88 : 12;
+    put(scene.actorId, spotX - (homeAtt ? 2.5 : -2.5), 50);
+    put(scene.keeperId, goalX, 50);
+    /* clear the box — wall stays out */
+    wallIds(homeAtt ? "away" : "home", 4).forEach((id, i) => {
+      put(id, homeAtt ? 70 - i * 2 : 30 + i * 2, 30 + i * 12);
+    });
+    if (!scene.ballFrom) scene.ballFrom = { x: spotX, y: 50 };
+    if (scene.kind === "penalty") next.ball = { x: spotX, y: 50 };
+  } else if (scene.kind === "freekick") {
+    const from = scene.ballFrom ?? { x: homeAtt ? 68 : 32, y: 45 };
+    put(scene.actorId, from.x - (homeAtt ? 2 : -2), from.y);
+    put(scene.keeperId, goalX, 50);
+    wallIds(homeAtt ? "away" : "home", 4).forEach((id, i) => {
+      put(id, homeAtt ? from.x + 10 + i * 0.6 : from.x - 10 - i * 0.6, from.y - 6 + i * 4);
+    });
+    put(scene.mateId, homeAtt ? from.x - 6 : from.x + 6, from.y + 8);
+    if (!scene.ballFrom) scene.ballFrom = { ...from };
+  } else if (scene.kind === "throwin") {
+    const from = scene.ballFrom ?? { x: 40, y: 3 };
+    put(scene.actorId, from.x, from.y < 50 ? 5 : 95);
+    put(scene.mateId, homeAtt ? from.x + 6 : from.x - 6, from.y < 50 ? 22 : 78);
+    if (!scene.ballFrom) scene.ballFrom = { x: from.x, y: from.y < 50 ? 3 : 97 };
+  } else if (scene.kind === "goalkick") {
+    const from = scene.ballFrom ?? { x: homeAtt ? 6 : 94, y: 50 };
+    put(scene.actorId, from.x, 50);
+    put(scene.keeperId, from.x, 50);
+    if (!scene.ballFrom) scene.ballFrom = { ...from };
+  } else if (scene.kind === "miss") {
+    put(scene.actorId, boxX, 40);
+    if (!scene.ballFrom) scene.ballFrom = { x: boxX + (homeAtt ? 2 : -2), y: 44 };
+    next.ball = { x: homeAtt ? 88 : 12, y: 10 };
+  } else if (scene.kind === "goal") {
+    put(scene.actorId, boxX, 48);
+    put(scene.mateId, homeAtt ? 68 : 32, 24);
+    put(scene.keeperId, goalX, 42);
+    if (!scene.ballFrom) scene.ballFrom = { x: boxX + (homeAtt ? 3 : -3), y: 50 };
+    if (!next.ball || Math.abs(next.ball.x - 50) < 30) {
+      next.ball = { x: homeAtt ? 97.5 : 2.5, y: 48 };
+    }
+  } else if (scene.kind === "save") {
+    put(scene.actorId, boxX, 48);
+    put(scene.keeperId, goalX, 50);
+    if (!scene.ballFrom) scene.ballFrom = { x: boxX + (homeAtt ? 4 : -4), y: 50 };
+    next.ball = { x: homeAtt ? 90 : 10, y: 46 };
+  } else if (scene.kind === "shot") {
+    put(scene.actorId, boxX, 48);
+    put(scene.keeperId, goalX, 50);
+    next.ball = { x: homeAtt ? 90 : 10, y: 50 };
+  } else {
+    put(scene.actorId, boxX, 48);
+    put(scene.mateId, homeAtt ? 68 : 32, 24);
+    put(scene.keeperId, goalX, 50);
+  }
+}
+
+/** Centre-circle kick-off (match start or second-half restart). */
+export function applyKickOffScene(live: LiveMatch, side: "home" | "away"): LiveMatch {
+  const next: LiveMatch = {
+    ...live,
+    dots: { ...live.dots },
+    ball: { x: 50, y: 50 },
+    attackSide: side,
+  };
+  const xi = side === "home" ? next.homeXi : next.awayXi;
+  const taker = xi.find((id) => !next.off.includes(id) && next.dots[id]) ?? xi[9] ?? xi[8] ?? xi[0] ?? "";
+  const mate =
+    xi.find((id) => id !== taker && !next.off.includes(id)) ??
+    (side === "home" ? next.homeXi[8] : next.awayXi[8]) ??
+    "";
+  const placed = placeDots(next, "mid");
+  next.dots = placed.dots;
+  next.scene = {
+    minute: next.minute,
+    kind: "kickoff",
+    text: next.minute >= 45 ? "Second-half kick-off" : "Kick-off",
+    actorId: taker,
+    mateId: mate,
+    side,
+    freeze: true,
+    ballFrom: { x: 50, y: 50 },
+  };
+  next.ball = { x: side === "home" ? 56 : 44, y: 48 };
+  next.restartSide = null;
+  next.phaseChain = "kickoff";
+  next.attackSide = side;
+  layScene(next);
   return next;
 }
 
@@ -699,14 +1193,72 @@ function applySub(live: LiveMatch, side: "home" | "away", offId: string, onId: s
   const pStamina = 78;
   live.stamina[onId] = pStamina;
   live.ratings[onId] = 6.3;
+  const from = live.dots[offId];
+  if (from) {
+    live.dots[onId] = { x: from.x, y: from.y };
+    delete live.dots[offId];
+  }
   if (!live.off.includes(offId)) live.off = live.off.filter((id) => id !== offId);
 }
 
+/** Build manager half-time talk + proposed changes for the user's side. */
+export function buildHalfTimePlan(
+  live: LiveMatch,
+  map: Map<string, Player>,
+  state: SaveData,
+): { talk: string; changes: { offId: string; onId: string; reason: string }[] } {
+  const side = live.userSide;
+  const xi = side === "home" ? live.homeXi : live.awayXi;
+  const bench = side === "home" ? live.homeBench : live.awayBench;
+  const form = side === "home" ? live.homeForm : live.awayForm;
+  const ahead =
+    (side === "home" ? live.homeScore - live.awayScore : live.awayScore - live.homeScore) > 0;
+  const behind =
+    (side === "home" ? live.homeScore - live.awayScore : live.awayScore - live.homeScore) < 0;
+  const talk = behind
+    ? `${state.manager.name}: "We're a goal down. Heads up — I want more from the middle and a fresh pair of legs up top."`
+    : ahead
+      ? `${state.manager.name}: "Good first half. Keep the shape, don't gift them a way back. One change to keep us sharp."`
+      : `${state.manager.name}: "Level at the break. Stay compact, win the second balls. I'm making a change."`;
+
+  const changes: { offId: string; onId: string; reason: string }[] = [];
+  let worst = -1;
+  let worstSt = 999;
+  xi.forEach((id, i) => {
+    const slot = FORMATIONS[form][i];
+    if (!slot || slot.pos === "GK" || live.off.includes(id)) return;
+    const st = live.stamina[id] ?? 100;
+    if (st < worstSt) {
+      worstSt = st;
+      worst = i;
+    }
+  });
+  if (worst >= 0 && worstSt < 78) {
+    const offId = xi[worst]!;
+    const offP = map.get(offId);
+    const on = bench.find((id) => {
+      const p = map.get(id);
+      if (!p || live.off.includes(id)) return false;
+      if (offP?.pos === "GK") return p.pos === "GK";
+      return p.pos !== "GK";
+    });
+    if (on) {
+      changes.push({
+        offId,
+        onId: on,
+        reason: worstSt < 55 ? "Spent — legs gone" : behind ? "Need a spark" : "Fresh legs",
+      });
+    }
+  }
+  return { talk, changes };
+}
+
 function aiSub(live: LiveMatch, map: Map<string, Player>, side: "home" | "away", minute: number) {
-  if (live.userSide === side) return;
-  if (minute !== 60 && minute !== 72 && minute !== 82 && minute !== 100 && minute !== 110) return;
+  // Manager runs both benches in watch mode (user watches the game).
+  if (minute !== 58 && minute !== 60 && minute !== 72 && minute !== 82 && minute !== 100 && minute !== 110) return;
   const subs = side === "home" ? live.subsH : live.subsA;
   if (subs >= 3) return;
+  if (live.userSide === side && live.htPlan?.length && minute < 58) return;
   const xi = side === "home" ? live.homeXi : live.awayXi;
   const form = side === "home" ? live.homeForm : live.awayForm;
   let worst = -1;

@@ -1,6 +1,52 @@
 import { ALT, FIRST, FORMATIONS, LAST, NATIONS, lineOf, type Slot } from "./data";
-import type { Attrs, FormationId, Player, Position, TrainingFocus } from "./types";
+import type { Attrs, CompBucket, CompKind, FormationId, Player, PlayerComp, Position, TrainingFocus } from "./types";
 import { clamp, unit } from "./util";
+
+function emptyBucket(): CompBucket {
+  return { goals: 0, assists: 0, played: 0, yellows: 0, reds: 0, cleanSheets: 0 };
+}
+
+function fillBucket(raw?: Partial<CompBucket> | null): CompBucket {
+  return { ...emptyBucket(), ...(raw ?? {}) };
+}
+
+export function blankComp(): PlayerComp {
+  return {
+    league: emptyBucket(),
+    cup: emptyBucket(),
+    playoff: emptyBucket(),
+    friendly: emptyBucket(),
+  };
+}
+
+export function ensureComp(p: Pick<Player, "byComp">): PlayerComp {
+  const b = p.byComp ?? blankComp();
+  return {
+    league: fillBucket(b.league),
+    cup: fillBucket(b.cup),
+    playoff: fillBucket(b.playoff),
+    friendly: fillBucket(b.friendly),
+  };
+}
+
+export function bumpComp(
+  byComp: PlayerComp,
+  kind: CompKind,
+  patch: Partial<CompBucket>,
+): PlayerComp {
+  const cur = fillBucket(byComp[kind]);
+  return {
+    ...byComp,
+    [kind]: {
+      goals: cur.goals + (patch.goals ?? 0),
+      assists: cur.assists + (patch.assists ?? 0),
+      played: cur.played + (patch.played ?? 0),
+      yellows: cur.yellows + (patch.yellows ?? 0),
+      reds: cur.reds + (patch.reds ?? 0),
+      cleanSheets: cur.cleanSheets + (patch.cleanSheets ?? 0),
+    },
+  };
+}
 
 export function ovr(p: Pick<Player, "pos" | "attrs">): number {
   const a = p.attrs;
@@ -107,15 +153,21 @@ export function makePlayer(
     nationality: NATIONS[Math.floor(r(16) * NATIONS.length)] ?? "Marrow",
     injured: 0,
     yellows: 0,
+    reds: 0,
+    cleanSheets: 0,
     banned: 0,
     clubId,
     loan: null,
+    listed: false,
     fee: 0,
     played: 0,
     goals: 0,
     assists: 0,
     ratingSum: 0,
     ratingN: 0,
+    byComp: blankComp(),
+    careerGoals: 0,
+    careerAssists: 0,
   };
   for (let k = 0; k < 14; k++) {
     const now = ovr(player);

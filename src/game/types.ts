@@ -38,10 +38,12 @@ export type Screen =
   | "fans"
   | "stadium"
   | "facilities"
+  | "pitch"
   | "super"
   | "squad"
   | "fixtures"
   | "table"
+  | "world"
   | "manager"
   | "managersPool"
   | "youth"
@@ -53,17 +55,22 @@ export type Screen =
   | "market"
   | "squadStats"
   | "squadGoals"
+  | "leaders"
+  | "chart"
   | "inbox"
   | "settings"
   | "medical"
   | "rivals"
   | "history"
   | "finHistory"
+  | "tactics"
   | "clubList"
   | "highscores"
   | "about";
 
 export type BudgetMode = "max" | "normal" | "cautious" | "strict" | "zero";
+/** 1 = Premier League … 5 = National League */
+export type LeagueTier = 1 | 2 | 3 | 4 | 5;
 
 export type FanMood = "Popular" | "OK" | "Unsure" | "Unpopular";
 
@@ -87,6 +94,25 @@ export type ClubManager = {
   avatar?: number;
 };
 
+export type MatchFinance = {
+  tickets: number;
+  boxes: number;
+  food: number;
+  merch: number;
+  tv: number;
+  sponsor: number;
+  wages: number;
+  ground: number;
+  academy: number;
+  training: number;
+  bonus: number;
+  result: number;
+  interest: number;
+  feesIn: number;
+  feesOut: number;
+  net: number;
+};
+
 export type NewsCard =
   | { id: string; kind: "continue"; title: string; body: string; cta?: string }
   | {
@@ -96,8 +122,38 @@ export type NewsCard =
       body: string;
       options: { name: string; fee: number; untilSeason: number }[];
     }
-  | { id: string; kind: "tickets"; title: string; body: string; min: number; max: number }
-  | { id: string; kind: "bonus"; title: string; body: string; wages: number; recommended: number };
+  | { id: string; kind: "tickets"; title: string; body: string; min: number; max: number; suggested: number }
+  | { id: string; kind: "bonus"; title: string; body: string; wages: number; recommended: number }
+  | {
+      id: string;
+      kind: "bid";
+      title: string;
+      body: string;
+      playerId: string;
+      fee: number;
+      from: string;
+      keep: boolean;
+    }
+  | {
+      id: string;
+      kind: "contract";
+      title: string;
+      body: string;
+      playerId: string;
+      wages: number[];
+      years: number[];
+      suggestedWage: number;
+      suggestedYears: number;
+      wageBill: number;
+      recommendedBill: number;
+    }
+  | {
+      id: string;
+      kind: "weekFinance";
+      title: string;
+      body?: string;
+      finance: MatchFinance;
+    };
 
 export type Outlets = {
   burger: number;
@@ -124,9 +180,46 @@ export type Phase =
   | "match"
   | "report"
   | "season"
-  | "sacked";
+  | "sacked"
+  | "negotiate";
 export type PressTone = "bold" | "measured" | "deflect";
-export type CupStage = "qf" | "sf" | "final" | null;
+export type CupStage = "r16" | "qf" | "sf" | "final" | null;
+
+export type MatchScene = {
+  minute: number;
+  kind:
+    | "build"
+    | "cross"
+    | "shot"
+    | "goal"
+    | "save"
+    | "miss"
+    | "tackle"
+    | "card"
+    | "foul"
+    | "offside"
+    | "corner"
+    | "penalty"
+    | "freekick"
+    | "throwin"
+    | "kickoff"
+    | "goalkick";
+  text: string;
+  actorId: string;
+  mateId?: string;
+  keeperId?: string;
+  side: "home" | "away";
+  freeze: boolean;
+  /** How the chance was created — drives set-piece posing on the pitch. */
+  via?: "open" | "penalty" | "freekick" | "corner";
+  /** Ball starts here and flies toward `LiveMatch.ball` during the kick anim. */
+  ballFrom?: { x: number; y: number };
+};
+
+export type Playoff = {
+  round: "sf" | "final";
+  otherId: string;
+} | null;
 
 export type Attrs = {
   pace: number;
@@ -137,6 +230,19 @@ export type Attrs = {
   physical: number;
   gk: number;
 };
+
+export type CompKind = "league" | "cup" | "playoff" | "friendly";
+
+export type CompBucket = {
+  goals: number;
+  assists: number;
+  played: number;
+  yellows: number;
+  reds: number;
+  cleanSheets: number;
+};
+
+export type PlayerComp = Record<CompKind, CompBucket>;
 
 export type Player = {
   id: string;
@@ -154,15 +260,24 @@ export type Player = {
   nationality: string;
   injured: number;
   yellows: number;
+  reds: number;
+  cleanSheets: number;
   banned: number;
   clubId: string;
   loan: "in" | "out" | null;
+  /** Listed on the transfer market (awaiting bids) — not sold yet. */
+  listed: boolean;
   fee: number;
   played: number;
   goals: number;
   assists: number;
   ratingSum: number;
   ratingN: number;
+  /** Season totals split by competition. */
+  byComp: PlayerComp;
+  /** Career totals (survive season resets). */
+  careerGoals: number;
+  careerAssists: number;
 };
 
 export type Club = {
@@ -188,7 +303,7 @@ export type Staff = { coach: number; scout: number; physio: number };
 
 export type Fixture = {
   id: string;
-  competition: "league" | "cup";
+  competition: "league" | "cup" | "playoff" | "friendly";
   homeId: string;
   awayId: string;
   homeScore: number | null;
@@ -198,7 +313,7 @@ export type Fixture = {
 
 export type Week = {
   label: string;
-  kind: "league" | "cup";
+  kind: "league" | "cup" | "playoff" | "friendly";
   cupStage: CupStage;
   fixtures: Fixture[];
 };
@@ -230,7 +345,7 @@ export type LiveMatch = {
   minute: number;
   homeId: string;
   awayId: string;
-  competition: "league" | "cup";
+  competition: "league" | "cup" | "playoff" | "friendly";
   weekLabel: string;
   fixtureId: string;
   homeScore: number;
@@ -242,6 +357,7 @@ export type LiveMatch = {
   xgH: number;
   xgA: number;
   possH: number;
+  attackSide: "home" | "away";
   homeXi: string[];
   awayXi: string[];
   homeBench: string[];
@@ -259,6 +375,7 @@ export type LiveMatch = {
   log: LogLine[];
   ball: { x: number; y: number };
   dots: Record<string, { x: number; y: number }>;
+  scene: MatchScene | null;
   finished: boolean;
   subsH: number;
   subsA: number;
@@ -275,14 +392,32 @@ export type LiveMatch = {
   penAway: number;
   penKicks: PenKick[];
   penNext: "home" | "away";
+  /** Pre-match / half-time ceremony while the manager runs the side. */
+  stage: MatchStage;
+  htTalk: string | null;
+  htPlan: { offId: string; onId: string; reason: string }[] | null;
+  /** Conceding side kicks off after a goal (real restart). */
+  restartSide: "home" | "away" | null;
+  /** Previous open-play beat — chains build → cross → shot like real attacks. */
+  phaseChain: MatchScene["kind"] | null;
+  /** Added time at the end of a half (stoppage). */
+  addedTime: number;
 };
+
+export type MatchStage =
+  | "tunnel"
+  | "lineups"
+  | "tactics"
+  | "live"
+  | "ht-talk"
+  | "ht-changes";
 
 export type Report = {
   homeId: string;
   awayId: string;
   homeScore: number;
   awayScore: number;
-  competition: "league" | "cup";
+  competition: "league" | "cup" | "playoff" | "friendly";
   label: string;
   scorers: Scorer[];
   ratings: { id: string; name: string; pos: Position; rating: number; clubId: string }[];
@@ -297,7 +432,12 @@ export type Report = {
   notes: string[];
   xgH: number;
   xgA: number;
+  finance?: MatchFinance;
 };
+
+export type ManagerTarget = { playerId: string; reason: string };
+
+export type StandJob = { stand: StandId; weeks: number; toTier: number } | null;
 
 export type TableRow = {
   id: string;
@@ -317,10 +457,18 @@ export type SeasonReview = {
   move: "up" | "down" | "stay";
   objectiveHit: boolean;
   table: TableRow[];
-  tier: 1 | 2 | 3;
+  tier: LeagueTier;
+  awards: string;
 };
 
 export type Offer = { playerId: string; fee: number; from: string } | null;
+
+export type DealSpeaker = "chairman" | "manager" | "player" | "agent";
+
+export type DealLine = {
+  who: DealSpeaker;
+  text: string;
+};
 
 export type MarketDeal = {
   playerId: string;
@@ -329,6 +477,9 @@ export type MarketDeal = {
   offerFee: number;
   offerWage: number;
   round: number;
+  script: DealLine[];
+  mood: "open" | "tense" | "warm" | "done" | "walked";
+  beat: number;
 } | null;
 
 export type PenKick = {
@@ -348,7 +499,8 @@ export type SaveData = {
   managerName: string;
   chairmanName: string;
   userClubId: string;
-  tier: 1 | 2 | 3;
+  tier: LeagueTier;
+  nationId: string;
   season: number;
   weekIndex: number;
   cash: number;
@@ -391,12 +543,18 @@ export type SaveData = {
   live: LiveMatch | null;
   report: Report | null;
   review: SeasonReview | null;
+  playoff: Playoff;
+  transferFocus: Position | null;
+  targets: ManagerTarget[];
+  standJob: StandJob;
   offer: Offer;
   deal: MarketDeal;
   history: { season: number; tier: number; pos: number; pts: number }[];
   userCup: "in" | "out" | "winner";
   objective: string;
   muted: boolean;
+  /** Display currency for money in the UI (values stay GBP-based internally). */
+  currency: "GBP" | "EUR" | "USD";
   manager: ClubManager;
   managerPool: ClubManager[];
   transferBudgetMode: BudgetMode;
@@ -404,10 +562,16 @@ export type SaveData = {
   pitchQuality: number;
   superStadium: boolean;
   form: string;
+  /** League table position after each completed league week (1 = top). */
+  posTrail: number[];
   achievements: Achievement[];
   trophies: Trophy[];
   records: ClubRecords;
   seasonProfit: number;
+  /** Transfer window currently open. */
+  windowOpen: boolean;
+  /** Fees spent across the division this window (user + simulated AI). */
+  leagueSpend: number;
 };
 
 export type CreateInput = {
@@ -424,4 +588,6 @@ export type CreateInput = {
   kitId: number;
   rivalClubId: string;
   manager: ClubManager;
+  nationId: string;
+  startTier?: LeagueTier;
 };

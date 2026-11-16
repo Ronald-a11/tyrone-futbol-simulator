@@ -18,16 +18,35 @@ export function unit(seed: number, a = 0, b = 0, c = 0) {
   return mix(h) / 4294967296;
 }
 
-export function money(n: number) {
+export type MoneyCurrency = "GBP" | "EUR" | "USD";
+
+let displayCurrency: MoneyCurrency = "GBP";
+
+export function setDisplayCurrency(c: MoneyCurrency) {
+  displayCurrency = c === "EUR" || c === "USD" ? c : "GBP";
+}
+
+export function getDisplayCurrency(): MoneyCurrency {
+  return displayCurrency;
+}
+
+export function currencySymbol(c: MoneyCurrency = displayCurrency) {
+  if (c === "EUR") return "€";
+  if (c === "USD") return "$";
+  return "£";
+}
+
+export function money(n: number, currency: MoneyCurrency = displayCurrency) {
   const sign = n < 0 ? "-" : "";
+  const sym = currencySymbol(currency);
   const v = Math.abs(Math.round(n));
   if (v >= 1_000_000) {
     const m = v / 1_000_000;
     const digits = m >= 10 ? 1 : 2;
-    return `${sign}£${m.toFixed(digits)}m`;
+    return `${sign}${sym}${m.toFixed(digits)}m`;
   }
-  if (v >= 10_000) return `${sign}£${Math.round(v / 1000)}k`;
-  return `${sign}£${v.toLocaleString("en-GB")}`;
+  if (v >= 10_000) return `${sign}${sym}${Math.round(v / 1000)}k`;
+  return `${sign}${sym}${v.toLocaleString("en-GB")}`;
 }
 
 export function inkFor(hex: string) {

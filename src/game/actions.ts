@@ -1,16 +1,27 @@
-import { SHAPES, SPONSORS, debtLimit, nextBuild, stadiumLevel, standsOf, upgradeCost, staffCost } from "./data";
+import { SHAPES, SPONSORS, debtLimit, divisionBuildScale, nextBuild, standsOf, upgradeCost, staffCap, staffCost } from "./data";
 import {
   SUPER_STADIUM_COST,
+  facRating,
+  facilityPointCost,
   facilityStepCost,
   makeManagerPool,
   outletUpgradeCost,
   transferCap,
-  upgradeStepCost,
   weeklyFacilityCost,
 } from "./fc";
 import { liveReorderXi, userSubstitute } from "./match";
 import { ovr, pickXi, valueFor, wageFor } from "./players";
-import type { BudgetMode, ClubManager, FormationId, Mentality, Player, SaveData, StandId, TrainingFocus } from "./types";
+import type {
+  BudgetMode,
+  ClubManager,
+  DealLine,
+  FormationId,
+  Mentality,
+  Player,
+  SaveData,
+  StandId,
+  TrainingFocus,
+} from "./types";
 import { clamp, money, unit } from "./util";
 import { USER, leagueTable, sponsorWeekly, userPlayers, wageBill } from "./world";
 
@@ -24,6 +35,78 @@ function afford(state: SaveData, cost: number) {
   return state.cash >= cost;
 }
 
+function openingScript(
+  state: SaveData,
+  player: Player,
+  askFee: number,
+  askWage: number,
+): DealLine[] {
+  const mgr = state.manager?.name ?? "The manager";
+  const chair = state.chairmanName || "Chairman";
+  const club = state.clubs.find((c) => c.id === USER)?.name ?? "the club";
+  return [
+    { who: "manager", text: `${chair}, thank you for clearing an hour. ${player.name} is the name I want.` },
+    { who: "agent", text: `Gentlemen. ${player.name} is listening. We open at ${money(askFee)} and £${askWage.toLocaleString("en-GB")} a week.` },
+    { who: "player", text: `I like ${club}. I want to play. The numbers have to feel right.` },
+    { who: "chairman", text: `We're here to do business. Let's hear what lands.` },
+    { who: "manager", text: `${mgr} here — he fits the side. Don't lose him on pride.` },
+  ];
+}
+
+function counterScript(
+  state: SaveData,
+  player: Player,
+  feeN: number,
+  wageN: number,
+  askFee: number,
+  askWage: number,
+  moved: boolean,
+): DealLine[] {
+  const chair = state.chairmanName || "Chairman";
+  const gap = (askFee - feeN) / Math.max(1, askFee);
+  if (moved && gap < 0.08) {
+    return [
+      { who: "chairman", text: `We can stretch to ${money(feeN)} and £${wageN.toLocaleString("en-GB")} a week.` },
+      { who: "agent", text: `Hmm. That is getting close. Let us land at ${money(askFee)} and £${askWage.toLocaleString("en-GB")}.` },
+      { who: "player", text: `I can live with that if the board can.` },
+      { who: "manager", text: `Take the hand when it is offered.` },
+    ];
+  }
+  if (gap > 0.28) {
+    return [
+      { who: "chairman", text: `${money(feeN)}. Wage £${wageN.toLocaleString("en-GB")}. That is our room.` },
+      { who: "agent", text: `That is not a serious table. We stay at ${money(askFee)}.` },
+      { who: "player", text: `I came ready to listen. Not to be insulted.` },
+      { who: "manager", text: `${chair} — if we want him, we have to move.` },
+    ];
+  }
+  return [
+    { who: "chairman", text: `Counter: ${money(feeN)} and £${wageN.toLocaleString("en-GB")} a week.` },
+    { who: "agent", text: `Noted. We come in to ${money(askFee)} and £${askWage.toLocaleString("en-GB")}.` },
+    { who: "player", text: `Keep talking. I am still in the room.` },
+    { who: "manager", text: `Good. The gap is closing.` },
+  ];
+}
+
+function acceptScript(state: SaveData, player: Player, fee: number, wage: number): DealLine[] {
+  const club = state.clubs.find((c) => c.id === USER)?.name ?? "the club";
+  return [
+    { who: "chairman", text: `We meet you. ${money(fee)}, £${wage.toLocaleString("en-GB")} a week, three years.` },
+    { who: "agent", text: `Done. Papers tonight.` },
+    { who: "player", text: `Then I am a ${club} player. Let's go to work.` },
+    { who: "manager", text: `Welcome to the dressing room.` },
+  ];
+}
+
+function walkScript(player: Player): DealLine[] {
+  return [
+    { who: "chairman", text: `We're done. The numbers do not work.` },
+    { who: "agent", text: `Understood. We leave the room.` },
+    { who: "player", text: `Shame. Another club will call.` },
+    { who: "manager", text: `${player.name} walks. We look again.` },
+  ];
+}
+
 export function openDeal(state: SaveData, id: string): Result {
   const player = state.players.find((p) => p.id === id);
   if (!player || player.clubId !== "market") return { save: state, notice: "That player has already moved." };
@@ -35,12 +118,25 @@ export function openDeal(state: SaveData, id: string): Result {
   const askWage = Math.max(player.wage, wageFor(ovr(player), player.age));
   const offerFee = Math.round((askFee * 0.82) / 5000) * 5000;
   const offerWage = Math.round(askWage * 0.92);
+  const script = openingScript(state, player, askFee, askWage);
   return {
     save: {
       ...state,
-      deal: { playerId: id, askFee, askWage, offerFee, offerWage, round: 0 },
+      phase: "negotiate",
+      screen: "market",
+      deal: {
+        playerId: id,
+        askFee,
+        askWage,
+        offerFee,
+        offerWage,
+        round: 0,
+        script,
+        mood: "open",
+        beat: Date.now(),
+      },
     },
-    notice: `${player.name}'s people open at ${money(askFee)} and £${askWage.toLocaleString("en-GB")} a week.`,
+    notice: `The boardroom is ready. ${player.name}'s people open at ${money(askFee)}.`,
   };
 }
 
@@ -48,7 +144,7 @@ export function counterDeal(state: SaveData, fee: number, wage: number): Result 
   const deal = state.deal;
   if (!deal) return { save: state, notice: "No deal open." };
   const player = state.players.find((p) => p.id === deal.playerId && p.clubId === "market");
-  if (!player) return { save: { ...state, deal: null }, notice: "That player has already moved." };
+  if (!player) return { save: { ...state, deal: null, phase: "hub" }, notice: "That player has already moved." };
   if (deal.round >= 3) return { save: state, notice: "They won't talk further. Accept or walk." };
   const feeN = Math.max(0, Math.round(fee / 5000) * 5000);
   const wageN = Math.max(500, Math.round(wage));
@@ -63,9 +159,13 @@ export function counterDeal(state: SaveData, fee: number, wage: number): Result 
   else askWage = Math.round(deal.askWage * 0.97);
   askFee = Math.max(feeN, Math.min(player.fee * 1.15, askFee));
   askWage = Math.max(wageN, Math.round(askWage));
+  const moved = askFee < deal.askFee || askWage < deal.askWage;
+  const gap = (askFee - feeN) / Math.max(1, askFee);
+  const mood = gap < 0.1 ? "warm" : gap > 0.25 ? "tense" : "open";
   return {
     save: {
       ...state,
+      phase: "negotiate",
       deal: {
         ...deal,
         offerFee: feeN,
@@ -73,6 +173,9 @@ export function counterDeal(state: SaveData, fee: number, wage: number): Result 
         askFee,
         askWage,
         round: deal.round + 1,
+        script: counterScript(state, player, feeN, wageN, askFee, askWage, moved),
+        mood,
+        beat: Date.now(),
       },
     },
     notice: `They come back at ${money(askFee)} and £${askWage.toLocaleString("en-GB")} a week.`,
@@ -83,20 +186,39 @@ export function acceptDeal(state: SaveData): Result {
   const deal = state.deal;
   if (!deal) return { save: state, notice: "No deal open." };
   const player = state.players.find((p) => p.id === deal.playerId && p.clubId === "market");
-  if (!player) return { save: { ...state, deal: null }, notice: "That player has already moved." };
+  if (!player) return { save: { ...state, deal: null, phase: "hub" }, notice: "That player has already moved." };
   if (squadCount(state) >= 24) return { save: state, notice: "The squad is full at 24." };
   const fee = deal.askFee;
   const wage = deal.askWage;
   if (!afford(state, fee)) return { save: state, notice: "The account can't cover that fee." };
   if (fee > transferCap(state)) return { save: state, notice: "That fee is over the transfer budget the chairman set." };
+  if (deal.mood !== "done") {
+    return {
+      save: {
+        ...state,
+        phase: "negotiate",
+        deal: {
+          ...deal,
+          script: acceptScript(state, player, fee, wage),
+          mood: "done",
+          beat: Date.now(),
+        },
+      },
+      notice: "Hands across the table.",
+    };
+  }
   const next: Player = { ...player, clubId: USER, loan: null, contract: 3, fee: 0, wage };
   return {
     save: {
       ...state,
+      phase: "hub",
+      screen: "market",
       cash: state.cash - fee,
       deal: null,
       players: state.players.map((p) => (p.id === player.id ? next : p)),
       feesPaid: (state.feesPaid ?? 0) + fee,
+      leagueSpend: (state.leagueSpend ?? 0) + fee,
+      targets: (state.targets ?? []).filter((t) => t.playerId !== player.id),
     },
     notice: `${player.name} signs for ${money(fee)}. Wage £${wage.toLocaleString("en-GB")} a week.`,
   };
@@ -105,7 +227,25 @@ export function acceptDeal(state: SaveData): Result {
 export function walkDeal(state: SaveData): Result {
   if (!state.deal) return { save: state, notice: "No deal open." };
   const player = state.players.find((p) => p.id === state.deal?.playerId);
-  return { save: { ...state, deal: null }, notice: player ? `Talks with ${player.name} collapse.` : "Talks collapse." };
+  if (state.deal.mood !== "walked" && player) {
+    return {
+      save: {
+        ...state,
+        phase: "negotiate",
+        deal: {
+          ...state.deal,
+          script: walkScript(player),
+          mood: "walked",
+          beat: Date.now(),
+        },
+      },
+      notice: "Chairs scrape. Talks are over.",
+    };
+  }
+  return {
+    save: { ...state, deal: null, phase: "hub", screen: "market" },
+    notice: player ? `Talks with ${player.name} collapse.` : "Talks collapse.",
+  };
 }
 
 export function buyPlayer(state: SaveData, id: string): Result {
@@ -138,6 +278,27 @@ export function loanIn(state: SaveData, id: string): Result {
   return {
     save: { ...state, players: state.players.map((p) => (p.id === id ? next : p)) },
     notice: `${player.name} arrives on loan until the season ends. You pay the wage.`,
+  };
+}
+
+/** List / unlist a player on the transfer market (does not sell instantly). */
+export function listPlayer(state: SaveData, id: string): Result {
+  const player = state.players.find((p) => p.id === id && p.clubId === USER);
+  if (!player) return { save: state, notice: "Not your player." };
+  if (player.loan === "in") return { save: state, notice: "Loanees can't be listed." };
+  if (player.loan === "out") return { save: state, notice: "Bring him back before listing." };
+  const asking = Math.round((valueFor(player) * (0.9 + state.fans / 600)) / 10000) * 10000;
+  const listed = !player.listed;
+  return {
+    save: {
+      ...state,
+      players: state.players.map((p) =>
+        p.id === id ? { ...p, listed, fee: listed ? asking : 0 } : p,
+      ),
+    },
+    notice: listed
+      ? `${player.name} is listed for sale · asking ${money(asking)}. Bids will arrive over the weeks.`
+      : `${player.name} taken off the transfer list.`,
   };
 }
 
@@ -241,8 +402,34 @@ export function renew(state: SaveData, id: string): Result {
   };
 }
 
+export function offerContract(state: SaveData, id: string, wage: number, years: number): Result {
+  const player = state.players.find((p) => p.id === id && p.clubId === USER);
+  if (!player) return { save: state, notice: "Not your player." };
+  if (player.loan === "in") return { save: state, notice: "Loans end with the season." };
+  const y = clamp(Math.round(years), 1, 5);
+  const w = Math.max(1, Math.round(wage));
+  const cost = Math.round(w * 4);
+  if (state.cash < cost) return { save: state, notice: "Signing-on fee is four weeks' wages. Not enough cash." };
+  const happy = w >= player.wage ? 6 : w >= player.wage * 0.9 ? 2 : -4;
+  return {
+    save: {
+      ...state,
+      cash: state.cash - cost,
+      players: state.players.map((p) =>
+        p.id === id ? { ...p, contract: y, wage: w, morale: clamp(p.morale + happy, 30, 99) } : p,
+      ),
+    },
+    notice: `${player.name} accepts £${w.toLocaleString("en-GB")}/wk until ${y === 1 ? "next season" : `${y} seasons`}.`,
+  };
+}
+
 export function upgradeFacility(state: SaveData, key: "stadium" | "training" | "academy" | "medical"): Result {
   if (key === "stadium") return { save: state, notice: "The ground is built stand by stand." };
+  if (key === "training" || key === "academy") {
+    const rating = facRating(state.facilities[key]);
+    if (rating >= 99) return { save: state, notice: "Already at the top rating." };
+    return setFacilityTarget(state, key, rating + 1);
+  }
   const level = state.facilities[key];
   if (level >= 5) return { save: state, notice: "Already at the top level." };
   const cost = upgradeCost(key, level);
@@ -269,28 +456,39 @@ export function upgradeStand(state: SaveData, id: StandId): Result {
   const tier = stands[id];
   const job = nextBuild(id, tier);
   if (!job) return { save: state, notice: "That stand is finished." };
-  if (state.cash < job.cost) return { save: state, notice: `${job.name} needs ${money(job.cost)}. The account is short.` };
-  const next = { ...stands, [id]: tier + 1 };
-  const boxes = job.boxes > 0 ? ` ${job.boxes} of them are boxes.` : "";
+  if (state.standJob) {
+    return { save: state, notice: "The builders are already on one stand. Wait until that job opens." };
+  }
+  const cost = Math.max(5_000, Math.round((job.cost * divisionBuildScale(state.tier)) / 1000) * 1000);
+  if (state.cash < cost) return { save: state, notice: `${job.name} needs ${money(cost)}. The account is short.` };
+  const weeks = 2 + tier;
   return {
     save: {
       ...state,
-      cash: state.cash - job.cost,
-      stands: next,
-      facilities: { ...state.facilities, stadium: stadiumLevel(next) },
+      cash: state.cash - cost,
+      standJob: { stand: id, weeks, toTier: tier + 1 },
     },
-    notice: `${job.name} goes up. ${job.seats.toLocaleString("en-GB")} seats added.${boxes}`,
+    notice: `${job.work} The job costs ${money(cost)} and opens in ${weeks} weeks.`,
   };
 }
 
 export function upgradeStaff(state: SaveData, key: "coach" | "scout" | "physio"): Result {
   const level = state.staff[key];
-  if (level >= 5) return { save: state, notice: "That desk is as good as it gets." };
+  const cap = staffCap(state.tier, key);
+  if (level >= cap) {
+    return {
+      save: state,
+      notice:
+        cap < 5
+          ? `This division only allows ${cap} ${key}${cap === 1 ? "" : "s"}. Promote to expand the backroom.`
+          : "That desk is as good as it gets.",
+    };
+  }
   const cost = staffCost(level);
   if (state.cash < cost) return { save: state, notice: "Hiring better staff takes cash." };
   return {
     save: { ...state, cash: state.cash - cost, staff: { ...state.staff, [key]: level + 1 } },
-    notice: `New ${key} appointed. Quality ${level + 1}.`,
+    notice: `New ${key} appointed. Quality ${level + 1} of ${cap} for this division.`,
   };
 }
 
@@ -561,9 +759,9 @@ export function setFacilityTarget(
   key: "training" | "academy",
   target: number,
 ): Result {
-  const current = state.facilities[key];
-  const to = clamp(Math.round(target), 1, 5);
-  if (to <= current) return { save: state, notice: "Already at or above that level." };
+  const current = facRating(state.facilities[key]);
+  const to = clamp(Math.round(target), 20, 99);
+  if (to <= current) return { save: state, notice: "Already at or above that rating." };
   const cost = facilityStepCost(current, to);
   if (state.cash < cost) return { save: state, notice: `Upgrade needs ${money(cost)}.` };
   return {
@@ -572,15 +770,17 @@ export function setFacilityTarget(
       cash: state.cash - cost,
       facilities: { ...state.facilities, [key]: to },
     },
-    notice: `${key === "academy" ? "Youth coaching" : "Training"} now level ${to}. Weekly cost about £${weeklyFacilityCost(to * 5)}.`,
+    notice: `${key === "academy" ? "Youth coaching" : "Training"} now rating ${to}. Weekly cost £${weeklyFacilityCost(to)}.`,
   };
 }
 
 export function bumpPitch(state: SaveData, delta: number): Result {
   const next = clamp(state.pitchQuality + delta, 1, 99);
   if (next === state.pitchQuality) return { save: state, notice: "" };
-  const steps = Math.abs(next - state.pitchQuality);
-  const cost = steps * upgradeStepCost(Math.floor(state.pitchQuality / 20));
+  let cost = 0;
+  if (next > state.pitchQuality) {
+    for (let r = state.pitchQuality; r < next; r++) cost += facilityPointCost(r);
+  }
   if (next > state.pitchQuality && state.cash < cost) return { save: state, notice: `Pitch work needs ${money(cost)}.` };
   return {
     save: {

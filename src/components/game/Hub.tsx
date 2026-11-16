@@ -1,10 +1,25 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { STAND_IDS, STANDS, TIER_META, standFacts, standsOf } from "@/game/data";
+import { AvatarPortrait } from "@/components/game/AvatarPortrait";
+import {
+  STAND_IDS,
+  STANDS,
+  TIER_META,
+  FORMATION_IDS,
+  FORMATIONS,
+  PHILOSOPHIES,
+  divisionBuildScale,
+  nextBuild,
+  staffCap,
+  staffSlotsForTier,
+  standFacts,
+  standsOf,
+} from "@/game/data";
 import {
   ACHIEVEMENT_DEFS,
   CHAIRMAN_AVATARS,
   SUPER_STADIUM_COST,
   budgetLabel,
+  facRating,
   facilityStepCost,
   outletCrowdCap,
   outletProfitPerSale,
@@ -12,13 +27,15 @@ import {
   makeManagerPool,
   seasonMonthLabel,
   transferCap,
+  facilityPointCost,
   weeklyFacilityCost,
 } from "@/game/fc";
-import { maskOvr, ovr } from "@/game/players";
-import { listSlots } from "@/game/saves";
+import { maskOvr, ovr, valueFor } from "@/game/players";
+import { euroBoards, otherLeagueBoards, seasonLeaders } from "@/game/scout";
 import { useGame } from "@/game/store";
-import type { BudgetMode, Screen, TrainingFocus } from "@/game/types";
-import { money } from "@/game/util";
+import type { BudgetMode, BuildUp, LineHeight, Player, Position, Screen, TrainingFocus } from "@/game/types";
+import { money, type MoneyCurrency } from "@/game/util";
+import { Crest } from "./ui";
 import {
   USER,
   currentWeek,
@@ -27,9 +44,11 @@ import {
   tablePos,
   userClub,
   userFixture,
+  suggestTargets,
   userPlayers,
   wageBill,
 } from "@/game/world";
+import { autoPromo, playoffBand } from "@/game/england";
 import {
   FcBtn,
   FcCard,
@@ -41,6 +60,7 @@ import {
   FormDots,
   MoneyBag,
   PitchMark,
+  TileGlyph,
   formatMoney,
   posTone,
 } from "./fc/chrome";
@@ -57,7 +77,7 @@ export function Hub() {
           onClick={clear}
           className="notice-in fixed top-12 right-0 left-0 z-40 mx-auto max-w-[430px] px-3"
         >
-          <div className="rounded-lg bg-[var(--color-fc-navy)] px-3 py-2 text-center text-sm text-white shadow-lg">
+          <div className="rounded-xl border border-white/10 bg-[var(--color-fc-navy)] px-3 py-2.5 text-center text-sm font-medium text-white shadow-[0_12px_28px_rgba(0,0,0,0.35)]">
             {notice}
           </div>
         </button>
@@ -68,13 +88,18 @@ export function Hub() {
       {screen === "fans" && <Fans />}
       {screen === "stadium" && <StadiumPits />}
       {screen === "facilities" && <Facilities />}
+      {screen === "pitch" && <PitchImprove />}
       {screen === "super" && <SuperStadium />}
       {screen === "squad" && <SquadScreen />}
       {screen === "squadStats" && <SquadStats />}
       {screen === "squadGoals" && <SquadGoals />}
+      {screen === "leaders" && <LeadersScreen />}
+      {screen === "chart" && <ChartScreen />}
       {screen === "fixtures" && <Fixtures />}
       {screen === "table" && <TableScreen />}
+      {screen === "world" && <WorldLeagues />}
       {screen === "manager" && <ManagerScreen />}
+      {screen === "tactics" && <TacticsBoard />}
       {screen === "managersPool" && <ManagersPool />}
       {screen === "youth" && <YouthTraining kind="academy" />}
       {screen === "training" && <YouthTraining kind="training" />}
@@ -107,7 +132,19 @@ function Dashboard() {
   const foe = tie ? state.clubs.find((c) => c.id === (tie.homeId === USER ? tie.awayId : tie.homeId)) : null;
   const home = tie?.homeId === USER;
   const pos = tablePos(state);
-  const squadN = userPlayers(state).filter((p) => p.loan !== "out").length;
+  const squad = userPlayers(state).filter((p) => p.loan !== "out");
+  const xiPlayers = state.xi
+    .map((id) => squad.find((p) => p.id === id))
+    .filter((p): p is NonNullable<typeof p> => !!p);
+  const avgSquad = xiPlayers.length
+    ? Math.round(xiPlayers.reduce((s, p) => s + ovr(p), 0) / xiPlayers.length)
+    : squad.length
+      ? Math.round(squad.reduce((s, p) => s + ovr(p), 0) / squad.length)
+      : 0;
+  const mgr = state.manager;
+  const avgMgr = mgr ? Math.round((mgr.m + mgr.c + mgr.t) / 3) : 30;
+  const youthR = facRating(state.facilities.academy);
+  const trainR = facRating(state.facilities.training);
   const quickSim = useGame((s) => s.quickSim);
   const toPress = useGame((s) => s.toPress);
   const advanceBye = useGame((s) => s.advanceBye);
@@ -116,11 +153,11 @@ function Dashboard() {
   const footer = tie && foe
     ? [
         {
-          label: `Sim: ${foe.short} (${home ? "H" : "A"})`,
+          label: `${week?.kind === "friendly" ? "Friendly" : "Sim"}: ${foe.short} (${home ? "H" : "A"})`,
           onClick: quickSim,
           primary: true,
         },
-        { label: "Watch", onClick: toPress },
+        { label: "Watch (mgr)", onClick: toPress },
       ]
     : [{ label: week ? "Advance week" : "Season break", onClick: advanceBye, primary: true }];
 
@@ -128,70 +165,183 @@ function Dashboard() {
   return (
     <FcShell footer={<FcFooter buttons={footer} />}>
       <FcHeader title="Desk" brand onSettings={() => go("settings")} onHelp={() => go("about")} />
-      <div className="flex flex-1 flex-col gap-2.5 px-3 pb-3 pt-2">
-        <div className="mx-auto w-full max-w-[92%] rounded-2xl bg-white px-4 py-2.5 text-center shadow-sm">
-          <div className="font-display text-xl font-bold tracking-wide text-[var(--color-fc-navy)] uppercase">
+      <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-3 pb-3 pt-2">
+        <div className="fc-hero mx-auto w-full rounded-xl px-3 py-2.5 text-center">
+          <div className="font-display text-[1.55rem] leading-none text-[var(--color-fc-navy)] uppercase">
             {club?.name ?? "Club"}
           </div>
+          <div className="mt-1.5 flex items-center justify-center gap-2 font-sans text-[0.75rem] font-extrabold text-[var(--color-fc-navy)]/80">
+            <span className="tabular-nums">
+              {month} {2025 + state.season}
+            </span>
+            <span className="fc-chip">{TIER_META[state.tier].name}</span>
+            <span className="tabular-nums">Wk {state.weekIndex}</span>
+          </div>
         </div>
-        <div className="flex items-center justify-center gap-2 text-xs text-white/90">
-          <span className="tabular-nums">
-            {month} {2025 + state.season}
-          </span>
-          <span className="rounded-xl bg-[var(--color-fc-lime)] px-3 py-1 font-bold text-[#142016]">
-            {TIER_META[state.tier].name}
-          </span>
-          <span className="tabular-nums">Wk {state.weekIndex}</span>
-        </div>
-        <div className="grid grid-cols-4 gap-2">
+        <div className="rise rise-2 grid grid-cols-4 gap-2">
           <FcTile label="Weekend" value={state.weekIndex} tone="white" onClick={() => go("fixtures")} />
           <FcTile label="League" value={pos} tone="white" onClick={() => go("table")} />
           <FcTile label="Money" value={formatMoney(state.cash)} tone="white" wide onClick={() => go("finances")} />
-          <FcTile label="Squad" value={squadN} tone="navy" onClick={() => go("squad")} />
-          <FcTile label="Manager" value={state.manager?.m ?? 30} tone="navy" onClick={() => go("manager")} />
-          <FcTile label="Training" value={state.facilities.training * 20} tone="navy" onClick={() => go("training")} />
-          <FcTile label="Youth" value={state.facilities.academy * 20} tone="navy" onClick={() => go("youth")} />
+          <FcTile label="Squad" value={avgSquad} tone="navy" onClick={() => go("squad")} />
+          <FcTile label="Manager" value={avgMgr} tone="navy" onClick={() => go("manager")} />
+          <FcTile label="Training" value={trainR} tone="navy" onClick={() => go("training")} />
+          <FcTile label="Youth" value={youthR} tone="navy" onClick={() => go("youth")} />
+          <FcTile label="Scorers" tone="navy" onClick={() => go("leaders")}>
+            <TileGlyph kind="star" />
+          </FcTile>
+          <FcTile label="World" tone="navy" onClick={() => go("world")}>
+            <TileGlyph kind="chart" />
+          </FcTile>
           <FcTile label="Trophies" value={state.trophies.length} tone="green" onClick={() => go("trophies")} />
           <FcTile label="Achieved" value={state.achievements.length} tone="green" onClick={() => go("achievements")} />
           <FcTile label="Records" tone="green" onClick={() => go("records")}>
-            <span className="text-lg">🏅</span>
+            <TileGlyph kind="star" />
           </FcTile>
           <FcTile label="History" tone="green" onClick={() => go("history")}>
-            <span className="text-lg">📈</span>
+            <TileGlyph kind="chart" />
           </FcTile>
           <FcTile label="Fans happy?" tone="lime" wide onClick={() => go("fans")}>
-            <div className="mt-1 flex w-full justify-around text-xs font-bold">
+            <div className="mt-1 flex w-full justify-around font-sans text-xs font-extrabold">
               <span>{state.fanMgrHappy}% Mgr</span>
               <span>{state.fanChairHappy}% Chair</span>
             </div>
           </FcTile>
           <FcTile label="Stadium" tone="lime" onClick={() => go("stadium")}>
-            <span className="text-lg">⚽</span>
+            <TileGlyph kind="pitch" />
           </FcTile>
           <FcTile label="Chairman" tone="lime" onClick={() => go("career")}>
-            <span className="text-lg">{CHAIRMAN_AVATARS[state.chairmanAvatar] ?? "👔"}</span>
+            <AvatarPortrait id={state.chairmanAvatar} size={30} className="mt-0.5 rounded-lg" />
           </FcTile>
         </div>
-        <div className="flex justify-center gap-1.5 py-1">
+        <div className="rise rise-3 flex justify-center gap-1.5 py-1">
           {Array.from({ length: 10 }, (_, i) => (
             <span
               key={i}
-              className={`flex h-6 w-6 items-center justify-center rounded-sm border text-[0.65rem] ${i < state.trophies.length ? "border-[var(--color-fc-lime)] bg-[var(--color-fc-lime)]/30" : "border-white/40 bg-white/10"}`}
-            >
-              {state.trophies[i] ? "🏆" : ""}
-            </span>
+              className={`h-2 w-6 rounded-full ${
+                i < state.trophies.length ? "bg-[var(--color-fc-lime)]" : "bg-white/20"
+              }`}
+              title={state.trophies[i]?.label ?? "Empty shelf"}
+            />
           ))}
         </div>
         <FormDots form={state.form} />
+        <LeadersPeek />
         {week ? (
-          <p className="text-center text-xs text-white/85">
+          <p className="text-center font-sans text-[0.78rem] font-bold text-white/90">
             {week.label}
-            {state.offer ? " · Bid waiting" : ""}
+            {state.newsQueue.some((c) => c.kind === "bid") ? " · Bid waiting" : ""}
             {state.inbox.length ? ` · Mail ${state.inbox.length}` : ""}
           </p>
         ) : null}
+        <DeskNotes />
       </div>
     </FcShell>
+  );
+}
+
+function LeadersPeek() {
+  const state = useGame();
+  const leaders = useMemo(() => seasonLeaders(state), [state.players, state.weekIndex, state.tier]);
+  const topG = leaders.scorers[0];
+  const topA = leaders.assists[0];
+  if (!topG && !topA) return null;
+  const clubG = topG ? state.clubs.find((c) => c.id === topG.clubId) : null;
+  const clubA = topA ? state.clubs.find((c) => c.id === topA.clubId) : null;
+  return (
+    <button
+      type="button"
+      onClick={() => go("leaders")}
+      className="w-full rounded-xl bg-white/95 px-3 py-2.5 text-left shadow-md"
+    >
+      <div className="font-display text-sm uppercase text-[var(--color-fc-navy)]">League leaders</div>
+      <div className="mt-1 grid gap-1.5 text-xs font-extrabold">
+        {topG ? (
+          <div className="flex items-center justify-between gap-2">
+            <span className="flex min-w-0 items-center gap-1.5 truncate">
+              <AvatarPortrait id={playerFaceId(topG.id)} size={24} className="rounded-full" />
+              {clubG ? <Crest primary={clubG.primary} secondary={clubG.secondary} short={clubG.short} size={16} /> : null}
+              <span className="truncate">
+                {topG.name}
+                <span className="ml-1 font-bold text-black/45">{clubG?.short ?? ""}</span>
+              </span>
+            </span>
+            <span className="tabular-nums text-[#3E7D32]">{topG.goals}G</span>
+          </div>
+        ) : null}
+        {topA ? (
+          <div className="flex items-center justify-between gap-2">
+            <span className="flex min-w-0 items-center gap-1.5 truncate">
+              <AvatarPortrait id={playerFaceId(topA.id)} size={24} className="rounded-full" />
+              {clubA ? <Crest primary={clubA.primary} secondary={clubA.secondary} short={clubA.short} size={16} /> : null}
+              <span className="truncate">
+                {topA.name}
+                <span className="ml-1 font-bold text-black/45">{clubA?.short ?? ""}</span>
+              </span>
+            </span>
+            <span className="tabular-nums text-[#1c3d66]">{topA.assists}A</span>
+          </div>
+        ) : null}
+      </div>
+    </button>
+  );
+}
+
+function DeskNotes() {
+  const state = useGame();
+  const hurt = userPlayers(state).filter((p) => p.injured > 0);
+  const saved = (state.targets ?? [])
+    .map((t) => ({ ...t, player: state.players.find((p) => p.id === t.playerId && p.clubId === "market") }))
+    .filter((t) => t.player);
+  const shown = saved.length
+    ? saved
+    : suggestTargets(state)
+        .map((t) => ({ ...t, player: state.players.find((p) => p.id === t.playerId && p.clubId === "market") }))
+        .filter((t) => t.player);
+  return (
+    <div className="grid gap-2">
+      {hurt.length ? (
+        <button type="button" onClick={() => go("medical")} className="rounded-xl border border-white/10 bg-[#a50e0e] px-3 py-2.5 text-left text-xs text-white shadow-md">
+          <div className="font-display text-[0.85rem] uppercase">Injury news</div>
+          {hurt.slice(0, 3).map((p) => (
+            <div key={p.id} className="mt-1 flex items-center gap-2">
+              <AvatarPortrait id={playerFaceId(p.id)} size={22} className="rounded-full" />
+              <span>
+                {p.name} ({p.pos}) — {p.injured} week{p.injured === 1 ? "" : "s"}
+              </span>
+            </div>
+          ))}
+        </button>
+      ) : null}
+      {shown.length ? (
+        <div className="rounded-xl bg-white px-3 py-2 text-left text-xs text-black shadow-sm">
+          <div className="font-bold tracking-wide uppercase text-black/50">{state.manager.name} wants to buy</div>
+          {shown.map((t) =>
+            t.player ? (
+              <button
+                key={t.playerId}
+                type="button"
+                className="mt-2 flex w-full items-center justify-between gap-2 text-left"
+                onClick={() => {
+                  useGame.getState().openTalks(t.playerId);
+                  useGame.setState({ phase: "negotiate" });
+                }}
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <AvatarPortrait id={playerFaceId(t.player.id)} size={28} className="rounded-full" />
+                  <span className="min-w-0">
+                    <span className="block font-bold">
+                      {t.player.name} · {t.player.pos} · {ovr(t.player)}
+                    </span>
+                    <span className="text-black/60">{t.reason}</span>
+                  </span>
+                </span>
+                <span className="shrink-0 font-bold tabular-nums">{formatMoney(t.player.fee)}</span>
+              </button>
+            ) : null,
+          )}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -207,7 +357,7 @@ function Finances() {
         <FcFooter
           buttons={[
             { label: "Back", onClick: () => go("dash") },
-            { label: "Transfers", onClick: () => go("market") },
+            { label: "Transfers", onClick: () => go("budget") },
             { label: "History", onClick: () => go("finHistory") },
           ]}
         />
@@ -370,7 +520,22 @@ function StadiumPits() {
   const stands = standsOf(state);
   const facts = standFacts(stands);
   const club = userClub(state);
-  const [buildMode, setBuildMode] = useState(false);
+  const [selected, setSelected] = useState<keyof typeof stands>("west");
+  const job = nextBuild(selected, stands[selected]);
+  const cost = job ? Math.max(5_000, Math.round((job.cost * divisionBuildScale(state.tier)) / 1000) * 1000) : 0;
+  const weeks = 2 + stands[selected];
+  const active = state.standJob;
+  const builtYear = 2025 + state.season;
+  const groundImg = state.superStadium ? "/stadium/super.jpg" : "/stadium/ground-nl.jpg";
+  const standRows = STAND_IDS.map((id) => {
+    const tier = stands[id];
+    return {
+      id,
+      name: STANDS[id].name,
+      built: tier > 0 || stands[id] === 0 ? String(builtYear - Math.max(0, 1 - tier)) : "—",
+      cap: STANDS[id].seats[tier] ?? 0,
+    };
+  });
   return (
     <FcShell
       footer={
@@ -385,59 +550,159 @@ function StadiumPits() {
     >
       <FcHeader title={state.stadiumName || club?.stadium || "The Pits"} onSettings={() => go("settings")} />
       <div className="px-3 py-2">
-        <PitchMark />
-        <FcCard>
-          <div className="mb-2 flex items-center justify-between">
-            <div className="text-xs font-bold tracking-wide text-black/50 uppercase">
-              <span className="mr-4">Built</span>
-              <span>Capacity</span>
-            </div>
-            <FcBtn kind={buildMode ? "lime" : "white"} className="min-h-8 px-2 text-[0.65rem]" onClick={() => setBuildMode((b) => !b)}>
-              {buildMode ? "Done" : "Build"}
-            </FcBtn>
+        <div className="relative mb-2 overflow-hidden rounded-xl shadow-md">
+          <img
+            src={groundImg}
+            alt=""
+            className="h-36 w-full object-cover"
+            draggable={false}
+          />
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/45 to-transparent" />
+          <div className="absolute right-2 bottom-2 rounded bg-black/55 px-2 py-0.5 text-[0.65rem] font-semibold text-white">
+            Cap {facts.seats.toLocaleString("en-GB")}
           </div>
-          <table className="w-full text-sm">
-            <tbody>
-              {STAND_IDS.map((id) => {
-                const tier = stands[id];
-                const seats = STANDS[id].seats[tier] ?? 0;
-                return (
-                  <tr key={id} className="border-t border-black/10">
-                    <td className="py-2">
-                      <span className="inline-block rounded-md bg-white px-2 py-1 font-medium shadow-sm">{STANDS[id].name}</span>
-                    </td>
-                    <td className="tabular-nums">{2025 + state.season + tier}</td>
-                    <td className="text-right tabular-nums">{seats.toLocaleString("en-GB")}</td>
-                    {buildMode ? (
-                      <td className="pl-2 text-right">
-                        <FcBtn kind="lime" className="min-h-8 px-2 text-[0.65rem]" onClick={() => useGame.getState().liftStand(id)}>
-                          +
-                        </FcBtn>
-                      </td>
-                    ) : null}
-                  </tr>
-                );
-              })}
-              <tr className="border-t border-black/10">
-                <td className="py-2">
-                  <span className="inline-block rounded-md bg-white px-2 py-1 font-medium shadow-sm">Corners</span>
-                </td>
-                <td>—</td>
-                <td className="text-right">0</td>
-              </tr>
-              <tr className="border-t border-black/20 font-bold">
-                <td className="py-2">Pitch ({state.pitchQuality}/99)</td>
-                <td>
-                  {buildMode ? (
-                    <FcBtn kind="white" className="min-h-8 px-2 text-[0.65rem]" onClick={() => useGame.getState().setPitch(1)}>
-                      +1
-                    </FcBtn>
-                  ) : null}
-                </td>
-                <td className="text-right tabular-nums underline">{facts.seats.toLocaleString("en-GB")}</td>
-              </tr>
-            </tbody>
-          </table>
+        </div>
+        <button
+          type="button"
+          onClick={() => go("medical")}
+          className="mb-2 flex w-full items-center justify-between rounded-xl bg-white/90 px-3 py-2.5 text-left text-sm shadow"
+        >
+          <span className="font-semibold text-[#3E7D32]">Medical Centre · Level {state.facilities.medical}/5</span>
+          <span className="text-xs text-black/50">Upgrade ›</span>
+        </button>
+        <FcCard>
+          <div className="grid grid-cols-[1fr_4.5rem_5rem] gap-1 border-b border-black/15 pb-1 text-[0.65rem] font-semibold tracking-wide text-black/50 uppercase">
+            <span />
+            <span className="text-right">Built</span>
+            <span className="text-right">Capacity</span>
+          </div>
+          <ul>
+            {standRows.map((row) => (
+              <li key={row.id}>
+                <button
+                  type="button"
+                  onClick={() => setSelected(row.id)}
+                  className={`grid w-full grid-cols-[1fr_4.5rem_5rem] items-center gap-1 border-b border-black/10 py-2 text-left text-sm ${
+                    selected === row.id ? "bg-[var(--color-fc-lime)]/40" : ""
+                  }`}
+                >
+                  <span className="inline-flex w-fit rounded-full bg-white px-2.5 py-0.5 font-semibold uppercase shadow-sm">
+                    {row.name}
+                  </span>
+                  <span className="text-right tabular-nums font-semibold">{row.built}</span>
+                  <span className="text-right tabular-nums font-semibold">{row.cap.toLocaleString("en-GB")}</span>
+                </button>
+              </li>
+            ))}
+            <li className="grid grid-cols-[1fr_4.5rem_5rem] items-center gap-1 border-b border-black/10 py-2 text-sm">
+              <span className="inline-flex w-fit rounded-full bg-white px-2.5 py-0.5 font-semibold uppercase shadow-sm">Corners</span>
+              <span className="text-right tabular-nums font-semibold">—</span>
+              <span className="text-right tabular-nums font-semibold">0</span>
+            </li>
+            <li>
+              <button
+                type="button"
+                onClick={() => go("pitch")}
+                className="grid w-full grid-cols-[1fr_4.5rem_5rem] items-center gap-1 pt-2 text-left text-sm"
+              >
+                <span className="font-semibold text-[#3E7D32]">Pitch ({state.pitchQuality}/99) · Improve ›</span>
+                <span />
+                <span className="text-right tabular-nums text-base font-semibold">{facts.seats.toLocaleString("en-GB")}</span>
+              </button>
+            </li>
+          </ul>
+          {active?.stand === selected ? (
+            <p className="mt-3 text-sm font-semibold text-[#3E7D32]">
+              {STANDS[selected].name}: builders on site · {active.weeks} week{active.weeks === 1 ? "" : "s"} left
+            </p>
+          ) : job ? (
+            <div className="mt-3 border-t border-black/10 pt-3 text-sm">
+              <div className="font-display text-base uppercase">{STANDS[selected].name}</div>
+              <p className="mt-1 text-black/70">{job.work}</p>
+              <p className="mt-1 font-semibold">
+                {formatMoney(cost)} · {weeks} weeks · +{job.seats.toLocaleString("en-GB")} seats
+              </p>
+              <FcBtn
+                className="mt-2 w-full"
+                kind="lime"
+                disabled={!!active}
+                onClick={() => useGame.getState().liftStand(selected)}
+              >
+                {active ? "Job already running" : "Start works"}
+              </FcBtn>
+            </div>
+          ) : (
+            <p className="mt-3 text-sm font-semibold text-black/55">{STANDS[selected].name} is finished.</p>
+          )}
+        </FcCard>
+      </div>
+    </FcShell>
+  );
+}
+
+function PitchImprove() {
+  const state = useGame();
+  const current = state.pitchQuality;
+  const [target, setTarget] = useState(Math.min(99, current + 1));
+  const setPitch = useGame((s) => s.setPitch);
+  const delta = Math.max(0, target - current);
+  const cost =
+    delta > 0
+      ? Array.from({ length: delta }, (_, i) => facilityPointCost(current + i)).reduce((a, b) => a + b, 0)
+      : 0;
+  const img = current < 55 ? "/stadium/pitch-worn.jpg" : "/stadium/pitch-good.jpg";
+  return (
+    <FcShell
+      footer={
+        <FcFooter
+          buttons={[
+            { label: "Back", onClick: () => go("stadium") },
+            {
+              label: "Improve Pitch",
+              primary: true,
+              disabled: target <= current || cost > state.cash,
+              onClick: () => {
+                const before = useGame.getState().pitchQuality;
+                setPitch(target - before);
+                const after = useGame.getState().pitchQuality;
+                setTarget(Math.min(99, after + 1));
+              },
+            },
+          ]}
+        />
+      }
+    >
+      <FcHeader title="Pitch Improvements" />
+      <div className="px-3 py-3">
+        <div className="mb-3 overflow-hidden rounded-xl shadow-md">
+          <img src={img} alt="" className="h-36 w-full object-cover" draggable={false} />
+        </div>
+        <FcCard>
+          <div className="flex items-center justify-between gap-2 border-b border-black/10 py-3">
+            <div className="flex gap-1">
+              <FcBtn kind="red" onClick={() => setTarget((t) => Math.max(current, t - 5))}>
+                {"<<"} 5
+              </FcBtn>
+              <FcBtn kind="red" onClick={() => setTarget((t) => Math.max(current, t - 1))}>
+                {"<"} 1
+              </FcBtn>
+            </div>
+            <div className="font-display text-4xl tabular-nums">{target}</div>
+            <div className="flex gap-1">
+              <FcBtn kind="lime" onClick={() => setTarget((t) => Math.min(99, t + 1))}>
+                1 {">"}
+              </FcBtn>
+              <FcBtn kind="lime" onClick={() => setTarget((t) => Math.min(99, t + 5))}>
+                5 {">>"}
+              </FcBtn>
+            </div>
+          </div>
+          <dl className="mt-3 grid gap-1 text-sm">
+            <Row k="Current Pitch Condition" v={String(current)} />
+            <Row k="Cost to Improve" v={delta > 0 ? formatMoney(cost) : "—"} />
+            <Row k="Bank balance" v={formatMoney(state.cash)} />
+          </dl>
+          <p className="mt-2 text-xs text-black/55">A better surface cuts injuries and lifts home form.</p>
         </FcCard>
       </div>
     </FcShell>
@@ -533,19 +798,29 @@ function SuperStadium() {
     <FcShell footer={<FcFooter buttons={[{ label: "Back", onClick: () => go("stadium") }]} />}>
       <FcHeader title="Super Stadium" />
       <div className="px-3 py-3">
-        <div className="mx-auto mb-3 flex h-28 w-48 items-end justify-center rounded-lg bg-[#2d6b3a] shadow-inner">
-          <div className="h-16 w-40 rounded-t-xl border-2 border-white/50 bg-[#4a90c4]/40" />
+        <div className="relative mb-3 overflow-hidden rounded-xl shadow-lg">
+          <img
+            src="/stadium/super.jpg"
+            alt=""
+            className="h-44 w-full object-cover"
+            draggable={false}
+          />
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
+          <div className="absolute bottom-2 left-2 rounded bg-black/55 px-2 py-1 text-xs font-semibold text-white">
+            {state.superStadium ? "Your ground" : "Dream ground · 120k scale"}
+          </div>
         </div>
         <FcCard>
-          <p className="text-sm">
-            Get a purpose-built super stadium! Ready immediately, with lower running costs than an old-fashioned ground.
+          <p className="text-sm leading-relaxed text-black/80">
+            A purpose-built bowl with full roofs, floodlights and lower running costs than an old-fashioned ground.
+            Ready the week you buy it.
           </p>
           {state.superStadium ? (
-            <p className="mt-3 font-bold text-[#3E7D32]">Already built.</p>
+            <p className="mt-3 font-semibold text-[#3E7D32]">Already built — stands maxed, pitch at elite level.</p>
           ) : (
             <div className="mt-3 grid gap-2">
-              <FcBtn kind="white" onClick={buySuper}>
-                Buy with {formatMoney(SUPER_STADIUM_COST)} in-game money
+              <FcBtn kind="lime" onClick={buySuper}>
+                Buy with {formatMoney(SUPER_STADIUM_COST)}
               </FcBtn>
               <FcBtn kind="white" disabled>
                 Buy with £3.99 in-app (unavailable)
@@ -558,85 +833,262 @@ function SuperStadium() {
   );
 }
 
+function posSortKey(pos: string) {
+  const g = posGroup(pos);
+  const order = { G: 0, D: 1, M: 2, A: 3 }[g];
+  const fine =
+    pos === "GK"
+      ? 0
+      : pos === "CB"
+        ? 1
+        : pos === "LB"
+          ? 2
+          : pos === "RB"
+            ? 3
+            : pos === "CDM"
+              ? 4
+              : pos === "CM"
+                ? 5
+                : pos === "CAM"
+                  ? 6
+                  : pos === "LW"
+                    ? 7
+                    : pos === "RW"
+                      ? 8
+                      : 9;
+  return order * 20 + fine;
+}
+
+function sortByLine(a: Player, b: Player) {
+  return posSortKey(a.pos) - posSortKey(b.pos) || ovr(b) - ovr(a);
+}
+
+function SquadAlignPitch({
+  formation,
+  xi,
+  players,
+  avg,
+}: {
+  formation: string;
+  xi: string[];
+  players: Player[];
+  avg: number;
+}) {
+  const slots = FORMATIONS[formation as keyof typeof FORMATIONS] ?? FORMATIONS["4-3-3"];
+  const byId = new Map(players.map((p) => [p.id, p]));
+  return (
+    <div className="mt-2 overflow-hidden rounded-xl bg-[#1a5c2e] shadow-md">
+      <div className="flex items-center justify-between bg-black/25 px-3 py-1.5 text-xs font-extrabold text-white uppercase">
+        <span>
+          {formation} · How they line up
+        </span>
+        <span className="tabular-nums">XI avg {avg}</span>
+      </div>
+      <div className="relative mx-auto aspect-[3/4] w-full max-w-[340px] bg-[radial-gradient(ellipse_at_center,#3d9a4a_0%,#1f6b32_70%)]">
+        <div className="pointer-events-none absolute inset-[6%] rounded-sm border border-white/35">
+          <div className="absolute top-1/2 left-0 h-px w-full bg-white/35" />
+          <div className="absolute top-1/2 left-1/2 h-14 w-14 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/35" />
+        </div>
+        {slots.map((slot, i) => {
+          const p = byId.get(xi[i] ?? "");
+          const g = p ? posGroup(p.pos) : posGroup(slot.pos);
+          const tag =
+            g === "G" ? "bg-[#1f8a5b]" : g === "D" ? "bg-[#1c3d66]" : g === "M" ? "bg-[#a50e0e]" : "bg-[#c97a1a]";
+          const surname = p ? (p.name.split(" ").pop() ?? p.name) : slot.pos;
+          return (
+            <div
+              key={`${slot.pos}-${i}`}
+              className="absolute flex w-[22%] -translate-x-1/2 -translate-y-1/2 flex-col items-center"
+              style={{ left: `${slot.y}%`, top: `${100 - slot.x}%` }}
+            >
+              <span className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border-2 border-white/80 bg-[var(--color-fc-lime-soft)] shadow">
+                {p ? <AvatarPortrait id={playerFaceId(p.id)} size={32} /> : <span className="text-[0.55rem] font-bold">{slot.pos}</span>}
+              </span>
+              <span className={`mt-0.5 max-w-full truncate rounded px-1 py-0.5 text-[0.55rem] font-extrabold text-white uppercase shadow ${tag}`}>
+                {surname}
+                {p ? ` · ${ovr(p)}` : ""}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function SquadScreen() {
   const state = useGame();
   const [picked, setPicked] = useState<string | null>(null);
+  const [tab, setTab] = useState<"stats" | "info">("info");
   const xi = new Set(state.xi);
-  const players = userPlayers(state).filter((p) => p.loan !== "out").sort((a, b) => ovr(b) - ovr(a));
+  const players = userPlayers(state)
+    .filter((p) => p.loan !== "out")
+    .slice()
+    .sort(sortByLine);
   const loaned = userPlayers(state).filter((p) => p.loan === "out");
-  const first = players.filter((p) => xi.has(p.id));
-  const reserves = players.filter((p) => !xi.has(p.id));
+  const first = players.filter((p) => xi.has(p.id)).sort(sortByLine);
+  const reserves = players.filter((p) => !xi.has(p.id)).sort(sortByLine);
   const detail = state.players.find((p) => p.id === picked);
-  const sell = useGame((s) => s.sell);
+  const avgShown = first.length
+    ? Math.round(first.reduce((s, p) => s + ovr(p), 0) / first.length)
+    : 0;
+  const listForSale = useGame((s) => s.listForSale);
   const loanAway = useGame((s) => s.loanAway);
   const renewPlayer = useGame((s) => s.renewPlayer);
   const recallPlayer = useGame((s) => s.recallPlayer);
+  const g = detail ? posGroup(detail.pos) : "A";
+  const roleBlurb = detail
+    ? detail.age <= 21
+      ? `Young ${xi.has(detail.id) ? "first-team" : "reserve"} ${detail.pos === "GK" ? "goalkeeper" : detail.pos}`
+      : `${xi.has(detail.id) ? "First-team" : "Reserve"} ${detail.pos === "GK" ? "goalkeeper" : detail.pos}`
+    : "";
   return (
     <FcShell
       footer={
-        <FcFooter
-          buttons={[
-            { label: "Back", onClick: () => go("dash") },
-            { label: "Squad Stats", onClick: () => go("squadStats") },
-            { label: "Games/Goals", onClick: () => go("squadGoals") },
-          ]}
-        />
+        detail ? (
+          <FcFooter
+            buttons={[
+              { label: "Back", onClick: () => setPicked(null) },
+              { label: "New contract", onClick: () => renewPlayer(detail.id), primary: true },
+              {
+                label: detail.listed ? "Unlist" : "List for sale",
+                onClick: () => listForSale(detail.id),
+              },
+            ]}
+          />
+        ) : (
+          <FcFooter
+            buttons={[
+              { label: "Back", onClick: () => go("dash") },
+              { label: "Squad Stats", onClick: () => go("squadStats") },
+              { label: "Games/Goals", onClick: () => go("squadGoals") },
+            ]}
+          />
+        )
       }
     >
-      <FcHeader title="Your Squad" />
+      <FcHeader title={detail ? "Player Profile" : "Your Squad"} />
       <div className="flex-1 overflow-y-auto px-2 pb-2">
         {detail ? (
           <FcCard className="mt-2">
-            <div className="font-display text-xl font-bold uppercase">{detail.name}</div>
-            <p className="text-sm text-black/70">
-              {detail.pos} · OVR {ovr(detail)} · Age {detail.age} · £{detail.wage}/wk · contract {detail.contract}y
-            </p>
-            <p className="mt-1 text-xs text-black/60">
-              Fit {detail.fitness}% · Morale {detail.morale}%
-              {detail.injured > 0 ? ` · Injured ${detail.injured}w` : ""}
-              {detail.banned > 0 ? ` · Banned ${detail.banned}w` : ""}
-            </p>
+            <div className="flex items-start gap-3">
+              <AvatarPortrait id={playerFaceId(detail.id)} size={72} className="rounded-md" />
+              <div className="min-w-0 flex-1">
+                <div className="font-display text-2xl leading-none uppercase">{detail.name}</div>
+                <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                  <span className={`inline-flex overflow-hidden rounded text-xs font-extrabold text-white ${posTone(detail.pos)}`}>
+                    <span className="bg-black/25 px-1.5 py-0.5">{g}</span>
+                    <span className="bg-black px-1.5 py-0.5 tabular-nums">{ovr(detail)}</span>
+                  </span>
+                  <span className="text-sm font-bold">Age {detail.age}</span>
+                </div>
+              </div>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-1 rounded bg-black/5 p-1">
+              <button
+                type="button"
+                className={`rounded py-2 text-sm font-extrabold ${tab === "stats" ? "bg-[var(--color-fc-lime)]" : "bg-white"}`}
+                onClick={() => setTab("stats")}
+              >
+                Player Statistics
+              </button>
+              <button
+                type="button"
+                className={`rounded py-2 text-sm font-extrabold ${tab === "info" ? "bg-[var(--color-fc-lime)]" : "bg-white"}`}
+                onClick={() => setTab("info")}
+              >
+                Player Information
+              </button>
+            </div>
+            <div className="mt-2 border-t border-black/10 pt-2 text-sm font-bold text-black/70">{roleBlurb}</div>
+            {tab === "stats" ? (
+              <ul className="mt-2 space-y-1.5 text-sm">
+                <Row k="Joined" v={`${2025 + state.season - Math.max(0, 3 - detail.contract)}`} />
+                <Row k="This season" v={`${detail.played} games, ${detail.goals} goals, ${detail.assists} assists`} />
+                <Row k="Wage" v={`£${detail.wage} pw`} />
+                <Row k="Value" v={money(valueFor(detail))} />
+                <Row
+                  k="Transfer list"
+                  v={detail.listed ? `Listed · ask ${money(detail.fee || valueFor(detail))}` : "Not listed"}
+                  tone={detail.listed ? "warn" : undefined}
+                />
+                <Row k="Contract Expires" v={`${2025 + state.season + detail.contract}`} />
+                <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                  <AttrBar label="Pace" n={detail.attrs.pace} />
+                  <AttrBar label="Shoot" n={detail.attrs.shoot} />
+                  <AttrBar label="Pass" n={detail.attrs.pass} />
+                  <AttrBar label="Dribble" n={detail.attrs.dribble} />
+                  <AttrBar label="Defense" n={detail.attrs.defense} />
+                  <AttrBar label="Physical" n={detail.attrs.physical} />
+                  {detail.pos === "GK" ? <AttrBar label="GK" n={detail.attrs.gk} /> : null}
+                </div>
+              </ul>
+            ) : (
+              <ul className="mt-2 space-y-1.5 text-sm">
+                <Row k="Current Form" v={detail.ratingN ? (detail.ratingSum / detail.ratingN >= 7 ? "Good" : detail.ratingSum / detail.ratingN < 6 ? "Poor" : "OK") : "OK"} />
+                <Row k="Fitness" v={detail.injured > 0 ? `Injured ${detail.injured}w` : detail.fitness >= 75 ? "OK" : "Tired"} />
+                <Row
+                  k="Happiness"
+                  v={
+                    detail.morale >= 75
+                      ? "Pleased"
+                      : detail.morale >= 55
+                        ? "OK"
+                        : "Unhappy"
+                  }
+                  tone={detail.morale >= 55 ? "good" : "bad"}
+                />
+                <Row k="Personality" v={personaOf(detail.name)} tone="good" />
+                <Row k="Style" v={detail.attrs.pass >= detail.attrs.shoot ? "Passing" : "Direct"} tone="warn" />
+                {detail.banned > 0 ? <Row k="Suspension" v={`${detail.banned} games`} tone="bad" /> : null}
+              </ul>
+            )}
             <div className="mt-3 grid grid-cols-2 gap-2">
-              <FcBtn kind="lime" onClick={() => renewPlayer(detail.id)}>
-                Renew
-              </FcBtn>
               <FcBtn kind="white" disabled={xi.has(detail.id)} onClick={() => loanAway(detail.id)}>
                 Loan out
-              </FcBtn>
-              <FcBtn kind="red" onClick={() => sell(detail.id)}>
-                Sell
               </FcBtn>
               <FcBtn kind="white" onClick={() => setPicked(null)}>
                 Close
               </FcBtn>
             </div>
           </FcCard>
-        ) : null}
-        <SquadBlock title="First Team" rows={first} onPick={setPicked} />
-        <SquadBlock title="Reserves" rows={reserves} onPick={setPicked} />
-        {loaned.length ? (
-          <div className="mt-2">
-            <div className="px-1 font-display text-sm font-bold text-white uppercase">Out on loan</div>
-            <div className="mt-1 space-y-1 rounded-lg bg-white/90 p-2">
-              {loaned.map((p) => (
-                <div key={p.id} className="flex items-center justify-between gap-2 text-xs">
-                  <span>
-                    {p.name} <span className="text-black/50">{p.pos}</span>
-                  </span>
-                  <FcBtn kind="lime" className="min-h-8 px-2 text-[0.65rem]" onClick={() => recallPlayer(p.id)}>
-                    Recall
-                  </FcBtn>
+        ) : (
+          <>
+            <SquadAlignPitch formation={state.formation} xi={state.xi} players={players} avg={avgShown} />
+            <SquadBlock title="First Team" rows={first} onPick={setPicked} season={state.season} />
+            <SquadBlock title="Reserves" rows={reserves} onPick={setPicked} season={state.season} />
+            {loaned.length ? (
+              <div className="mt-2">
+                <div className="px-1 font-display text-sm text-white uppercase">Out on loan</div>
+                <div className="mt-1 space-y-1 rounded-lg bg-white/90 p-2">
+                  {loaned.map((p) => (
+                    <div key={p.id} className="flex items-center justify-between gap-2 text-xs">
+                      <span>
+                        {p.name} <span className="text-black/50">{p.pos}</span>
+                      </span>
+                      <FcBtn kind="lime" className="min-h-8 px-2 text-[0.65rem]" onClick={() => recallPlayer(p.id)}>
+                        Recall
+                      </FcBtn>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
-        <p className="mt-2 px-1 text-[0.65rem] text-white/80">
-          * Contract year left · ** Listed / loan. Positions: G goalkeeper, D defence, M midfield, A attack. Tap a player to renew, loan or sell.
-        </p>
+              </div>
+            ) : null}
+            <p className="mt-2 px-1 text-[0.65rem] font-bold text-white/85">
+              Ordered GK → DEF → MID → ATT. XI avg {avgShown}. * Loan / expiring · ** Transfer listed.
+            </p>
+          </>
+        )}
       </div>
     </FcShell>
   );
+}
+
+function personaOf(name: string) {
+  const personas = ["Quiet", "Calm", "Relaxed", "Determined", "Intense", "Outspoken"];
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h += name.charCodeAt(i);
+  return personas[h % personas.length];
 }
 
 function posGroup(pos: string): "G" | "D" | "M" | "A" {
@@ -646,20 +1098,36 @@ function posGroup(pos: string): "G" | "D" | "M" | "A" {
   return "A";
 }
 
-function playerFace(id: string) {
+function playerFaceId(id: string) {
   let h = 0;
   for (let i = 0; i < id.length; i++) h = (h + id.charCodeAt(i) * (i + 3)) % CHAIRMAN_AVATARS.length;
-  return CHAIRMAN_AVATARS[h] ?? "🧑";
+  return CHAIRMAN_AVATARS[h] ?? 0;
+}
+
+function AttrBar({ label, n }: { label: string; n: number }) {
+  return (
+    <div>
+      <div className="flex justify-between font-semibold text-black/70">
+        <span>{label}</span>
+        <span className="tabular-nums">{n}</span>
+      </div>
+      <div className="mt-0.5 h-1.5 overflow-hidden rounded-full bg-black/10">
+        <div className="h-full rounded-full bg-[var(--color-fc-forest)]" style={{ width: `${Math.max(8, Math.min(100, n))}%` }} />
+      </div>
+    </div>
+  );
 }
 
 function SquadBlock({
   title,
   rows,
   onPick,
+  season,
 }: {
   title: string;
   rows: ReturnType<typeof userPlayers>;
   onPick: (id: string) => void;
+  season: number;
 }) {
   return (
     <div className="mt-2">
@@ -679,7 +1147,7 @@ function SquadBlock({
           const fit = p.injured > 0 ? -1 : p.fitness >= 80 ? 1 : p.fitness < 55 ? -1 : 0;
           const hap = p.morale >= 70 ? 1 : p.morale < 45 ? -1 : 0;
           const g = posGroup(p.pos);
-          const mark = p.loan === "out" ? " **" : p.contract <= 1 ? " *" : "";
+          const mark = p.listed ? " **" : p.loan === "out" ? " *" : p.contract <= 1 ? " *" : "";
           return (
             <button
               type="button"
@@ -687,24 +1155,32 @@ function SquadBlock({
               onClick={() => onPick(p.id)}
               className={`grid w-full grid-cols-[1.75rem_1fr_1.5rem_2rem_4.5rem_2rem_2.5rem] items-center gap-1 px-2 py-1.5 text-left text-xs ${i % 2 ? "bg-black/5" : ""}`}
             >
-              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--color-fc-lime-soft)] text-sm">
-                {playerFace(p.id)}
+              <span className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border border-black/10 bg-[var(--color-fc-lime-soft)]">
+                <AvatarPortrait id={playerFaceId(p.id)} size={32} className="rounded-full" />
               </span>
-              <span className="truncate font-medium">
+              <span className={`truncate font-extrabold ${nameTone(g)}`}>
                 {p.name}
                 {mark}
-                {p.injured > 0 ? " 🤕" : ""}
-                {p.banned > 0 ? " 🟥" : ""}
+                {p.banned > 0 ? " ■" : ""}
+                {p.injured > 0 ? " +" : ""}
               </span>
               <span className={`rounded px-1 text-center text-[0.65rem] font-bold ${posTone(p.pos)}`}>{g}</span>
               <span className="rounded bg-black px-1 text-center font-bold text-white tabular-nums">{ovr(p)}</span>
               <span className="flex justify-center gap-0.5">
-                <Dot n={form} />
-                <Dot n={fit} />
-                <Dot n={hap} />
+                {p.banned > 0 ? (
+                  <span className="col-span-3 text-[0.6rem] font-extrabold text-[#a50e0e]">{p.banned} games</span>
+                ) : p.injured > 0 ? (
+                  <span className="text-[0.6rem] font-extrabold text-[#a50e0e]">{p.injured} weeks</span>
+                ) : (
+                  <>
+                    <Dot n={form} />
+                    <Dot n={fit} />
+                    <Dot n={hap} />
+                  </>
+                )}
               </span>
               <span className="text-center tabular-nums">{p.age}</span>
-              <span className="text-center tabular-nums">{2025 + p.contract}</span>
+              <span className="text-center tabular-nums">{2025 + season + p.contract}</span>
             </button>
           );
         })}
@@ -715,7 +1191,18 @@ function SquadBlock({
 
 function Dot({ n }: { n: number }) {
   const tone = n > 0 ? "bg-[#3E7D32] text-white" : n < 0 ? "bg-[#a50e0e] text-white" : "border border-black/30 bg-white";
-  return <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[0.55rem] font-bold ${tone}`}>{n || ""}</span>;
+  return (
+    <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[0.55rem] font-bold ${tone}`}>
+      {n > 0 ? `+${n}` : n < 0 ? `${n}` : ""}
+    </span>
+  );
+}
+
+function nameTone(g: "G" | "D" | "M" | "A") {
+  if (g === "G") return "text-[#1f8a5b]";
+  if (g === "D") return "text-[#1c3d66]";
+  if (g === "M") return "text-[#a50e0e]";
+  return "text-[#c97a1a]";
 }
 
 function SquadStats() {
@@ -731,9 +1218,12 @@ function SquadStats() {
         <FcCard>
           <ul className="grid gap-2 text-sm">
             {players.slice(0, 16).map((p) => (
-              <li key={p.id} className="flex justify-between gap-2">
-                <span>
-                  {p.name} <span className="text-black/50">{p.pos}</span>
+              <li key={p.id} className="flex items-center justify-between gap-2">
+                <span className="flex min-w-0 items-center gap-2">
+                  <AvatarPortrait id={playerFaceId(p.id)} size={28} className="rounded-full" />
+                  <span className="truncate">
+                    {p.name} <span className="text-black/50">{p.pos}</span>
+                  </span>
                 </span>
                 <span className="tabular-nums">
                   {ovr(p)} · {p.ratingN ? (p.ratingSum / p.ratingN).toFixed(1) : "—"}
@@ -752,26 +1242,233 @@ function SquadGoals() {
   const players = useMemo(
     () =>
       userPlayers(state)
-        .filter((p) => p.goals + p.assists > 0)
-        .sort((a, b) => b.goals - a.goals || b.assists - a.assists),
+        .filter((p) => p.goals + p.assists + p.played > 0)
+        .sort((a, b) => b.goals - a.goals || b.assists - a.assists || b.played - a.played),
     [state.players],
   );
   return (
-    <FcShell footer={<FcFooter buttons={[{ label: "Back", onClick: () => go("squad") }]} />}>
+    <FcShell
+      footer={
+        <FcFooter
+          buttons={[
+            { label: "Back", onClick: () => go("squad") },
+            { label: "League leaders", onClick: () => go("leaders"), primary: true },
+          ]}
+        />
+      }
+    >
       <FcHeader title="Games / Goals" />
       <div className="px-3 py-3">
         <FcCard>
           <ul className="grid gap-2 text-sm">
             {players.map((p) => (
-              <li key={p.id} className="flex justify-between">
-                <span>{p.name}</span>
-                <span className="tabular-nums">
+              <li key={p.id} className="flex items-center justify-between gap-2 border-t border-black/10 py-1.5">
+                <span className="flex min-w-0 items-center gap-2">
+                  <AvatarPortrait id={playerFaceId(p.id)} size={28} className="rounded-full" />
+                  <span className="truncate font-extrabold">{p.name}</span>
+                </span>
+                <span className="tabular-nums font-bold">
                   {p.played} apps · {p.goals}G {p.assists}A
                 </span>
               </li>
             ))}
-            {!players.length ? <li className="text-black/50">No goals yet.</li> : null}
+            {!players.length ? <li className="text-black/50">No apps yet.</li> : null}
           </ul>
+        </FcCard>
+      </div>
+    </FcShell>
+  );
+}
+
+function LeadersScreen() {
+  const state = useGame();
+  const [tab, setTab] = useState<"goals" | "assists" | "clean" | "yellow" | "red">("goals");
+  const [comp, setComp] = useState<"league" | "cup" | "playoff" | "friendly" | "all" | "career">("league");
+  const leaders = useMemo(() => seasonLeaders(state, comp), [state.players, state.weekIndex, state.tier, comp]);
+  const rows =
+    tab === "goals"
+      ? leaders.scorers
+      : tab === "assists"
+        ? leaders.assists
+        : tab === "clean"
+          ? leaders.cleanSheets
+          : tab === "yellow"
+            ? leaders.yellows
+            : leaders.reds;
+  const comps: { id: typeof comp; label: string }[] = [
+    { id: "league", label: "League" },
+    { id: "cup", label: "Cup" },
+    { id: "playoff", label: "Play-offs" },
+    { id: "friendly", label: "Friendly" },
+    { id: "all", label: "Season" },
+    { id: "career", label: "All-time" },
+  ];
+  const tabs: { id: typeof tab; label: string; accent: string }[] = [
+    { id: "goals", label: "Scorers", accent: "#c6f06c" },
+    { id: "assists", label: "Assists", accent: "#7dd3fc" },
+    { id: "clean", label: "Clean sheets", accent: "#a7f3d0" },
+    { id: "yellow", label: "Yellows", accent: "#fde047" },
+    { id: "red", label: "Reds", accent: "#f87171" },
+  ];
+  const valueOf = (row: (typeof rows)[number]) =>
+    tab === "goals"
+      ? row.goals
+      : tab === "assists"
+        ? row.assists
+        : tab === "clean"
+          ? row.cleanSheets
+          : tab === "yellow"
+            ? row.yellows
+            : row.reds;
+  const top = rows.slice(0, 3);
+  const rest = rows.slice(3);
+  const maxVal = Math.max(1, ...rows.map(valueOf));
+  const accent = tabs.find((t) => t.id === tab)?.accent ?? "#c6f06c";
+  return (
+    <FcShell
+      footer={
+        <FcFooter
+          buttons={[
+            { label: "Back", onClick: () => go("table") },
+            { label: "World", onClick: () => go("world") },
+            { label: "Table", onClick: () => go("table"), primary: true },
+          ]}
+        />
+      }
+    >
+      <FcHeader title={`${TIER_META[state.tier].short} leaders`} />
+      <div className="flex-1 space-y-3 overflow-y-auto px-3 py-3">
+        <div className="flex flex-wrap gap-1">
+          {comps.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              className={`rounded-full px-2.5 py-1 text-[0.65rem] font-bold uppercase tracking-wide ${
+                comp === c.id ? "bg-[var(--color-fc-lime)] text-black" : "bg-white/15 text-white"
+              }`}
+              onClick={() => setComp(c.id)}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-1 overflow-x-auto pb-1">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              className={`shrink-0 rounded-xl px-3 py-2 font-display text-[0.7rem] uppercase ${
+                tab === t.id ? "text-black" : "bg-black/25 text-white/80"
+              }`}
+              style={tab === t.id ? { background: t.accent } : undefined}
+              onClick={() => setTab(t.id)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {top.length ? (
+          <div className="grid grid-cols-3 items-end gap-2 rounded-2xl bg-[#0c1a12] p-3 text-white ring-1 ring-white/10">
+            {[top[1], top[0], top[2]].map((row, podiumI) => {
+              if (!row) return <div key={podiumI} />;
+              const rank = podiumI === 0 ? 2 : podiumI === 1 ? 1 : 3;
+              const heights = ["h-20", "h-28", "h-16"];
+              const club = state.clubs.find((c) => c.id === row.clubId);
+              return (
+                <div key={row.id} className="flex flex-col items-center text-center">
+                  <span className="mb-1 flex h-10 w-10 overflow-hidden rounded-full ring-2 ring-white/20">
+                    <AvatarPortrait id={playerFaceId(row.id)} size={40} className="rounded-full" />
+                  </span>
+                  <div className="truncate text-[0.7rem] font-bold leading-tight">{row.name.split(" ").pop()}</div>
+                  <div className="text-[0.6rem] text-white/50">{club?.short ?? ""}</div>
+                  <div
+                    className={`mt-2 flex w-full ${heights[podiumI]} flex-col items-center justify-end rounded-t-xl pb-2`}
+                    style={{ background: `linear-gradient(180deg, ${accent}55, ${accent}22)` }}
+                  >
+                    <div className="font-display text-2xl tabular-nums" style={{ color: accent }}>
+                      {valueOf(row)}
+                    </div>
+                    <div className="text-[0.65rem] font-bold text-white/60">#{rank}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="rounded-2xl bg-[#0c1a12] p-6 text-center text-sm text-white/55 ring-1 ring-white/10">
+            Nothing on the board yet.
+          </div>
+        )}
+
+        <div className="space-y-1.5">
+          {rest.map((row, i) => {
+            const club = state.clubs.find((c) => c.id === row.clubId);
+            const mine = row.clubId === USER;
+            const val = valueOf(row);
+            return (
+              <div
+                key={row.id}
+                className={`relative overflow-hidden rounded-xl bg-[#0c1a12] px-3 py-2.5 text-white ring-1 ring-white/8 ${mine ? "ring-[var(--color-fc-lime)]/50" : ""}`}
+              >
+                <div
+                  className="absolute inset-y-0 left-0 opacity-30"
+                  style={{ width: `${(val / maxVal) * 100}%`, background: accent }}
+                />
+                <div className="relative flex items-center gap-2 text-sm">
+                  <span className="w-5 tabular-nums text-white/40">{i + 4}</span>
+                  <span className="flex h-7 w-7 overflow-hidden rounded-full">
+                    <AvatarPortrait id={playerFaceId(row.id)} size={28} className="rounded-full" />
+                  </span>
+                  {club ? <Crest primary={club.primary} secondary={club.secondary} short={club.short} size={16} /> : null}
+                  <span className="min-w-0 flex-1 truncate font-semibold">{row.name}</span>
+                  <span className="font-display text-lg tabular-nums" style={{ color: accent }}>
+                    {val}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </FcShell>
+  );
+}
+
+function ChartScreen() {
+  const state = useGame();
+  const trail = state.posTrail ?? [];
+  const n = Math.max(20, leagueTable(state).length);
+  const colors = ["#3E7D32", "#a50e0e", "#c9a227", "#1c3d66", "#c97a1a"];
+  return (
+    <FcShell footer={<FcFooter buttons={[{ label: "Back", onClick: () => go("table"), primary: true }]} />}>
+      <FcHeader title="League Positions Chart" />
+      <div className="px-3 py-4">
+        <FcCard>
+          {!trail.length ? (
+            <p className="text-sm font-bold text-black/55">Play league weeks to fill the chart.</p>
+          ) : (
+            <ul className="space-y-2">
+              {trail.map((pos, i) => {
+                const width = Math.max(8, Math.round(((n + 1 - pos) / n) * 100));
+                const ordinal =
+                  pos === 1 ? "1st" : pos === 2 ? "2nd" : pos === 3 ? "3rd" : `${pos}th`;
+                return (
+                  <li key={i} className="flex items-center gap-2 text-sm">
+                    <span className="w-10 shrink-0 font-extrabold text-black/60">Wk {i + 1}</span>
+                    <div className="relative h-7 flex-1 overflow-hidden rounded bg-black/10">
+                      <div
+                        className="flex h-full items-center justify-end rounded px-2 font-display text-sm text-white"
+                        style={{ width: `${width}%`, background: colors[i % colors.length] }}
+                      >
+                        {ordinal}
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </FcCard>
       </div>
     </FcShell>
@@ -795,6 +1492,7 @@ function Fixtures() {
         label: w.label,
         bye: false as const,
         foe: foe?.name ?? "?",
+        foeClub: foe,
         home,
         gf,
         ga,
@@ -817,13 +1515,15 @@ function Fixtures() {
         <FcFooter
           buttons={[
             { label: "Back", onClick: () => go("dash") },
-            { label: "Chart", onClick: () => go("table") },
+            { label: "League Table", onClick: () => go("table"), primary: true },
+            { label: "Leaders", onClick: () => go("leaders") },
           ]}
         />
       }
     >
       <FcHeader title="Fixtures / Results" />
       <div className="flex-1 overflow-y-auto">
+        <WeekResultsStrip />
         <div className="grid grid-cols-[2rem_1fr_1.5rem_1.5rem_1.5rem_2.5rem_2rem] gap-1 bg-[var(--color-fc-navy)] px-2 py-1 text-[0.6rem] font-bold text-white uppercase">
           <span>Wk</span>
           <span>Opponent</span>
@@ -836,19 +1536,24 @@ function Fixtures() {
         {rows.map((r) => (
           <div
             key={r.wi}
-            className="grid grid-cols-[2rem_1fr_1.5rem_1.5rem_1.5rem_2.5rem_2rem] items-center gap-1 border-b border-black/10 bg-white/85 px-2 py-1.5 text-xs"
+            className="grid grid-cols-[2rem_1fr_1.5rem_1.5rem_1.5rem_2.5rem_2rem] items-center gap-1 border-b border-black/10 bg-white/90 px-2 py-1.5 text-xs"
           >
-            <span className="tabular-nums">{r.wi}</span>
+            <span className="tabular-nums font-bold">{r.wi}</span>
             {r.bye ? (
               <span className="col-span-6 text-black/50">No fixture</span>
             ) : (
               <>
-                <span className="truncate font-bold uppercase">
-                  {r.foe} ({r.home ? "H" : "A"})
-                  {r.kind === "cup" ? " · Cup" : ""}
+                <span className="flex min-w-0 items-center gap-1.5 truncate font-extrabold uppercase">
+                  {r.foeClub ? (
+                    <Crest primary={r.foeClub.primary} secondary={r.foeClub.secondary} short={r.foeClub.short} size={18} />
+                  ) : null}
+                  <span className="truncate">
+                    {r.foe} ({r.home ? "H" : "A"})
+                    {r.kind === "cup" ? " · Cup" : ""}
+                  </span>
                 </span>
-                <span className="tabular-nums">{r.gf ?? "—"}</span>
-                <span className="tabular-nums">{r.ga ?? "—"}</span>
+                <span className="tabular-nums font-bold">{r.gf ?? "—"}</span>
+                <span className="tabular-nums font-bold">{r.ga ?? "—"}</span>
                 <span>
                   {r.result ? (
                     <span
@@ -871,20 +1576,74 @@ function Fixtures() {
   );
 }
 
+function WeekResultsStrip() {
+  const state = useGame();
+  const week = state.weeks[Math.max(0, state.weekIndex - 1)];
+  if (!week || week.kind !== "league") return null;
+  const played = week.fixtures.filter((f) => f.homeScore != null);
+  if (!played.length) return null;
+  return (
+    <div className="mx-2 my-2 overflow-hidden rounded-xl bg-white/95">
+      <div className="bg-[var(--color-fc-navy)] px-3 py-1.5 font-display text-sm text-white uppercase">
+        {TIER_META[state.tier].short}, Week {state.weekIndex} · Results
+      </div>
+      <ul className="max-h-40 overflow-y-auto text-sm">
+        {played.map((f) => {
+          const home = state.clubs.find((c) => c.id === f.homeId);
+          const away = state.clubs.find((c) => c.id === f.awayId);
+          const hs = f.homeScore ?? 0;
+          const as = f.awayScore ?? 0;
+          const homeTone = hs > as ? "text-[#3E7D32]" : hs < as ? "text-[#a50e0e]" : "text-black";
+          const awayTone = as > hs ? "text-[#3E7D32]" : as < hs ? "text-[#a50e0e]" : "text-black";
+          return (
+            <li key={f.id} className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 border-t border-black/10 px-3 py-1.5 font-extrabold">
+              <span className={`flex items-center justify-end gap-1 truncate uppercase ${homeTone}`}>
+                <span className="truncate">{home?.short ?? "H"}</span>
+                {home ? <Crest primary={home.primary} secondary={home.secondary} short={home.short} size={16} /> : null}
+              </span>
+              <span className="tabular-nums">
+                {hs} - {as}
+              </span>
+              <span className={`flex items-center gap-1 truncate uppercase ${awayTone}`}>
+                {away ? <Crest primary={away.primary} secondary={away.secondary} short={away.short} size={16} /> : null}
+                <span className="truncate">{away?.short ?? "A"}</span>
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 function TableScreen() {
   const state = useGame();
   const table = leagueTable(state);
   const n = table.length;
+  const promo = autoPromo(state.tier);
+  const band = playoffBand(state.tier);
+  const playoffEnd = band ? band[1] : promo;
   return (
-    <FcShell footer={<FcFooter buttons={[{ label: "Back", onClick: () => go("fixtures") }]} />}>
-      <FcHeader title={`${TIER_META[state.tier].name}, Week ${state.weekIndex}`} />
-      <div className="px-3 py-3">
-        <FcCard>
-          <table className="w-full text-sm">
+    <FcShell
+      footer={
+        <FcFooter
+          buttons={[
+            { label: "Back", onClick: () => go("fixtures") },
+            { label: "World", onClick: () => go("world") },
+            { label: "Scorers", onClick: () => go("leaders"), primary: true },
+          ]}
+        />
+      }
+    >
+      <FcHeader title={`${TIER_META[state.tier].short}, Week ${state.weekIndex}`} />
+      <div className="flex-1 overflow-y-auto px-2 py-2">
+        <LeadersPeek />
+        <div className="mt-2 overflow-hidden rounded-xl bg-white/95">
+          <table className="w-full text-[0.72rem]">
             <thead>
-              <tr className="text-left text-xs uppercase text-black/50">
-                <th>#</th>
-                <th>Club</th>
+              <tr className="bg-[var(--color-fc-navy)] text-left text-[0.6rem] text-white uppercase">
+                <th className="px-1.5 py-1.5">#</th>
+                <th>Team</th>
                 <th className="text-right">P</th>
                 <th className="text-right">W</th>
                 <th className="text-right">D</th>
@@ -892,21 +1651,37 @@ function TableScreen() {
                 <th className="text-right">F</th>
                 <th className="text-right">A</th>
                 <th className="text-right">GD</th>
-                <th className="text-right">Pts</th>
+                <th className="px-1.5 text-right">Pts</th>
               </tr>
             </thead>
             <tbody>
               {table.map((row, i) => {
                 const c = state.clubs.find((x) => x.id === row.id);
-                const zone =
-                  i < 2 ? "bg-[#3E7D32]/15" : i >= n - 2 ? "bg-[#a50e0e]/10" : "";
+                const mine = row.id === USER;
+                const auto = i < promo;
+                const playoff = !auto && i < playoffEnd;
+                const releg = i >= n - 2;
+                const zone = mine
+                  ? "bg-white font-extrabold"
+                  : auto
+                    ? "bg-[#d6e8ff]"
+                    : playoff
+                      ? "bg-[#e8f0ff]"
+                      : releg
+                        ? "bg-[#fde8e8]"
+                        : i % 2
+                          ? "bg-black/[0.03]"
+                          : "";
+                const nameTone = mine ? "" : i === 0 ? "text-[#c9a227]" : auto ? "text-[#3E7D32]" : "";
                 return (
-                  <tr
-                    key={row.id}
-                    className={`${row.id === USER ? "bg-[var(--color-fc-lime)]/40 font-bold" : zone}`}
-                  >
-                    <td className="py-1.5">{i + 1}</td>
-                    <td className="truncate">{c?.short ?? c?.name}</td>
+                  <tr key={row.id} className={zone}>
+                    <td className="px-1.5 py-1 tabular-nums">{i + 1}</td>
+                    <td className={`py-0.5 ${nameTone}`}>
+                      <span className="inline-flex max-w-[6.5rem] items-center gap-1 truncate font-extrabold uppercase">
+                        {c ? <Crest primary={c.primary} secondary={c.secondary} short={c.short} size={16} /> : null}
+                        <span className="truncate">{c?.short ?? c?.name}</span>
+                      </span>
+                    </td>
                     <td className="text-right tabular-nums">{row.p}</td>
                     <td className="text-right tabular-nums">{row.w}</td>
                     <td className="text-right tabular-nums">{row.d}</td>
@@ -914,15 +1689,339 @@ function TableScreen() {
                     <td className="text-right tabular-nums">{row.gf}</td>
                     <td className="text-right tabular-nums">{row.ga}</td>
                     <td className="text-right tabular-nums">{row.gf - row.ga}</td>
-                    <td className="text-right tabular-nums">{row.pts}</td>
+                    <td className={`px-1.5 text-right tabular-nums font-extrabold ${i === 0 ? "text-[#c9a227]" : ""}`}>{row.pts}</td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
+        </div>
+      </div>
+    </FcShell>
+  );
+}
+
+type WorldStatTab = "table" | "goals" | "assists" | "clean" | "yellow" | "red";
+
+function WorldStatRail({
+  tab,
+  scorers,
+  assists,
+  cleanSheets,
+  yellows,
+  reds,
+}: {
+  tab: WorldStatTab;
+  scorers: { name: string; club: string; n: number }[];
+  assists: { name: string; club: string; n: number }[];
+  cleanSheets: { name: string; club: string; n: number }[];
+  yellows: { name: string; club: string; n: number }[];
+  reds: { name: string; club: string; n: number }[];
+}) {
+  if (tab === "table") return null;
+  const rows =
+    tab === "goals"
+      ? scorers
+      : tab === "assists"
+        ? assists
+        : tab === "clean"
+          ? cleanSheets
+          : tab === "yellow"
+            ? yellows
+            : reds;
+  const accent =
+    tab === "goals"
+      ? "#c6f06c"
+      : tab === "assists"
+        ? "#7dd3fc"
+        : tab === "clean"
+          ? "#a7f3d0"
+          : tab === "yellow"
+            ? "#fde047"
+            : "#f87171";
+  const max = Math.max(1, ...rows.map((r) => r.n));
+  return (
+    <div className="mt-3 space-y-2">
+      {rows.map((row, i) => (
+        <div key={`${row.name}-${row.club}-${i}`} className="relative overflow-hidden rounded-xl bg-black/35 px-3 py-2.5 ring-1 ring-white/10">
+          <div className="absolute inset-y-0 left-0 opacity-25" style={{ width: `${(row.n / max) * 100}%`, background: accent }} />
+          <div className="relative flex items-center gap-2 text-sm text-white">
+            <span className="font-display text-lg tabular-nums text-white/35">{String(i + 1).padStart(2, "0")}</span>
+            <span className="min-w-0 flex-1 truncate font-semibold">
+              {row.name}
+              <span className="ml-1.5 text-xs font-medium text-white/45">{row.club}</span>
+            </span>
+            <span className="font-display text-xl tabular-nums" style={{ color: accent }}>
+              {row.n}
+            </span>
+          </div>
+        </div>
+      ))}
+      {!rows.length ? <p className="py-4 text-center text-sm text-white/45">No entries yet.</p> : null}
+    </div>
+  );
+}
+
+function WorldLadder({ rows }: { rows: { name: string; short: string; primary: string; secondary: string; p: number; w: number; d: number; l: number; gf: number; ga: number; gd: number; pts: number }[] }) {
+  const maxPts = Math.max(1, ...rows.map((r) => r.pts));
+  return (
+    <div className="mt-3 space-y-1.5">
+      {rows.map((row, i) => {
+        const zone = i < 3 ? "euro" : i >= rows.length - 3 ? "drop" : "mid";
+        return (
+          <div
+            key={row.short}
+            className={`relative overflow-hidden rounded-xl px-2.5 py-2 ring-1 ${
+              zone === "euro"
+                ? "bg-[#13281c] ring-[var(--color-fc-lime)]/35"
+                : zone === "drop"
+                  ? "bg-[#2a1414] ring-red-400/25"
+                  : "bg-black/30 ring-white/8"
+            }`}
+          >
+            <div
+              className="absolute inset-y-0 left-0 opacity-20"
+              style={{
+                width: `${(row.pts / maxPts) * 100}%`,
+                background: zone === "drop" ? "#f87171" : "#c6f06c",
+              }}
+            />
+            <div className="relative flex items-center gap-2 text-white">
+              <span className={`w-6 text-center font-display text-lg tabular-nums ${i === 0 ? "text-[#f5d76e]" : "text-white/40"}`}>
+                {i + 1}
+              </span>
+              <Crest primary={row.primary} secondary={row.secondary} short={row.short} size={22} />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-bold">{row.name}</div>
+                <div className="text-[0.65rem] tabular-nums text-white/45">
+                  {row.p}P · {row.w}W {row.d}D {row.l}L · GD {row.gd > 0 ? `+${row.gd}` : row.gd}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="font-display text-xl tabular-nums text-[var(--color-fc-lime)]">{row.pts}</div>
+                <div className="text-[0.6rem] uppercase tracking-wide text-white/35">pts</div>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function WorldLeagues() {
+  const state = useGame();
+  const boards = useMemo(() => otherLeagueBoards(state), [state.seed, state.weekIndex, state.tier, state.season]);
+  const euros = useMemo(() => euroBoards(state), [state.seed, state.weekIndex, state.tier, state.season]);
+  const [scope, setScope] = useState<"eng" | "ucl" | "uel" | "uecl">("eng");
+  const [engTier, setEngTier] = useState<number | null>(null);
+  const [stat, setStat] = useState<WorldStatTab>("table");
+
+  const engActive = boards.find((b) => b.tier === (engTier ?? boards[0]?.tier)) ?? boards[0];
+  const euroActive = euros.find((e) => e.id === scope);
+  const active = scope === "eng" ? engActive : euroActive;
+
+  const statTabs: { id: WorldStatTab; label: string }[] = [
+    { id: "table", label: "Ladder" },
+    { id: "goals", label: "Scorers" },
+    { id: "assists", label: "Assists" },
+    { id: "clean", label: "Clean sheets" },
+    { id: "yellow", label: "Yellows" },
+    { id: "red", label: "Reds" },
+  ];
+
+  return (
+    <FcShell
+      footer={
+        <FcFooter
+          buttons={[
+            { label: "Back", onClick: () => go("table") },
+            { label: "Your leaders", onClick: () => go("leaders") },
+            { label: "Your table", onClick: () => go("table"), primary: true },
+          ]}
+        />
+      }
+    >
+      <FcHeader title="World board" />
+      <div className="flex-1 space-y-3 overflow-y-auto px-3 py-3">
+        <div className="overflow-hidden rounded-2xl bg-[#0c1a12] p-3 text-white ring-1 ring-white/10">
+          <div className="flex flex-wrap gap-1">
+            <button
+              type="button"
+              className={`rounded-full px-3 py-1.5 text-[0.7rem] font-bold uppercase ${scope === "eng" ? "bg-[var(--color-fc-lime)] text-black" : "bg-white/10"}`}
+              onClick={() => {
+                setScope("eng");
+                setStat("table");
+              }}
+            >
+              England
+            </button>
+            {euros.map((e) => (
+              <button
+                key={e.id}
+                type="button"
+                className={`rounded-full px-3 py-1.5 text-[0.7rem] font-bold uppercase ${scope === e.id ? "bg-[var(--color-fc-lime)] text-black" : "bg-white/10"}`}
+                onClick={() => {
+                  setScope(e.id);
+                  setStat("table");
+                }}
+              >
+                {e.short}
+              </button>
+            ))}
+          </div>
+          {scope === "eng" ? (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {boards.map((b) => (
+                <button
+                  key={b.tier}
+                  type="button"
+                  className={`rounded-lg px-2 py-1 text-[0.65rem] font-bold uppercase ${
+                    (engTier ?? boards[0]?.tier) === b.tier ? "bg-white text-black" : "bg-white/10 text-white/80"
+                  }`}
+                  onClick={() => {
+                    setEngTier(b.tier);
+                    setStat("table");
+                  }}
+                >
+                  {b.short}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {active ? (
+            <>
+              <div className="mt-3 font-display text-2xl uppercase leading-none">{active.short}</div>
+              <p className="mt-1 text-xs text-white/55">{active.headline}</p>
+              <div className="mt-3 flex gap-1 overflow-x-auto pb-1">
+                {statTabs.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    className={`shrink-0 rounded-lg px-2.5 py-1.5 font-display text-[0.65rem] uppercase ${
+                      stat === t.id ? "bg-[var(--color-fc-lime)] text-black" : "bg-white/10 text-white/75"
+                    }`}
+                    onClick={() => setStat(t.id)}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+              {stat === "table" ? <WorldLadder rows={active.rows} /> : null}
+              <WorldStatRail
+                tab={stat}
+                scorers={active.scorers}
+                assists={active.assists}
+                cleanSheets={active.cleanSheets}
+                yellows={active.yellows}
+                reds={active.reds}
+              />
+            </>
+          ) : (
+            <p className="mt-4 text-sm text-white/50">No boards available this week.</p>
+          )}
+        </div>
+      </div>
+    </FcShell>
+  );
+}
+
+function TacticsBoard() {
+  const state = useGame();
+  const m = state.manager;
+  const shapes = FORMATION_IDS.slice(0, 8);
+  return (
+    <FcShell footer={<FcFooter buttons={[{ label: "Back to manager", onClick: () => go("manager"), primary: true }]} />}>
+      <FcHeader title="Tactics" />
+      <div className="px-3 py-3">
+        <FcCard>
+          <div className="font-display text-xl font-bold uppercase">{m.name}'s plan</div>
+          <p className="mt-1 text-sm text-black/70">
+            {state.formation} · {state.philosophy} · {state.line} line · {state.build} build. Tempo {state.tempo}, press {state.pressing}, width {state.width}.
+          </p>
+          <p className="mt-2 text-xs text-black/55">
+            A high line and a hard press create chances and tire the side. Drop the line if you are protecting a lead. You can still change this during a match.
+          </p>
+          <div className="mt-3 text-xs font-bold tracking-wide text-black/50 uppercase">Shape</div>
+          <div className="mt-1 flex flex-wrap gap-1">
+            {shapes.map((id) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => useGame.getState().shape(id)}
+                className={`rounded-full px-2 py-1 text-xs font-bold ${state.formation === id ? "bg-[var(--color-fc-lime)]" : "bg-black/5"}`}
+              >
+                {id}
+              </button>
+            ))}
+          </div>
+          <div className="mt-3 text-xs font-bold tracking-wide text-black/50 uppercase">Idea</div>
+          <div className="mt-1 flex flex-wrap gap-1">
+            {PHILOSOPHIES.map((idea) => (
+              <button
+                key={idea.id}
+                type="button"
+                onClick={() => useGame.getState().instructManager({ style: idea.id })}
+                className={`rounded-full px-2 py-1 text-xs font-bold ${state.philosophy === idea.id ? "bg-[var(--color-fc-lime)]" : "bg-black/5"}`}
+              >
+                {idea.title}
+              </button>
+            ))}
+          </div>
+          <Meter label="Tempo" value={state.tempo} onPick={(n) => useGame.getState().tune("tempo", n)} />
+          <Meter label="Pressing" value={state.pressing} onPick={(n) => useGame.getState().tune("pressing", n)} />
+          <Meter label="Width" value={state.width} onPick={(n) => useGame.getState().tune("width", n)} />
+          <div className="mt-3 text-xs font-bold tracking-wide text-black/50 uppercase">Line</div>
+          <div className="mt-1 flex gap-1">
+            {(["deep", "standard", "high"] as LineHeight[]).map((id) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => useGame.getState().setLine(id)}
+                className={`flex-1 rounded-lg py-2 text-xs font-bold capitalize ${state.line === id ? "bg-[var(--color-fc-navy)] text-white" : "bg-black/5"}`}
+              >
+                {id}
+              </button>
+            ))}
+          </div>
+          <div className="mt-3 text-xs font-bold tracking-wide text-black/50 uppercase">Build-up</div>
+          <div className="mt-1 flex gap-1">
+            {(["short", "mixed", "direct"] as BuildUp[]).map((id) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => useGame.getState().setBuild(id)}
+                className={`flex-1 rounded-lg py-2 text-xs font-bold capitalize ${state.build === id ? "bg-[var(--color-fc-navy)] text-white" : "bg-black/5"}`}
+              >
+                {id}
+              </button>
+            ))}
+          </div>
         </FcCard>
       </div>
     </FcShell>
+  );
+}
+
+function Meter({ label, value, onPick }: { label: string; value: number; onPick: (n: number) => void }) {
+  return (
+    <div className="mt-3">
+      <div className="text-xs font-bold tracking-wide text-black/50 uppercase">
+        {label} {value}
+      </div>
+      <div className="mt-1 flex gap-1">
+        {[1, 2, 3, 4, 5].map((n) => (
+          <button
+            key={n}
+            type="button"
+            onClick={() => onPick(n)}
+            className={`h-8 flex-1 rounded-md text-xs font-bold ${value === n ? "bg-[var(--color-fc-lime)]" : "bg-black/10"}`}
+          >
+            {n}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -948,18 +2047,68 @@ function ManagerScreen() {
       <div className="px-3 py-3">
         <FcCard>
           <div className="flex gap-3">
-            <div className="flex h-16 w-16 items-center justify-center rounded-md bg-[var(--color-fc-lime-soft)] text-3xl">👤</div>
+            <AvatarPortrait id={m.avatar ?? 0} size={64} className="rounded-md" />
             <div className="min-w-0 flex-1">
               <div className="font-display text-2xl font-bold uppercase">{m.name}</div>
-              <div className="mt-1 flex gap-1">
+              <div className="mt-1 flex flex-wrap items-center gap-1">
                 <StatPill letter="M" n={m.m} />
                 <StatPill letter="C" n={m.c} />
                 <StatPill letter="T" n={m.t} />
+                <span className="ml-1 rounded bg-black px-1.5 py-0.5 text-xs font-extrabold text-white tabular-nums">
+                  AVG {Math.round((m.m + m.c + m.t) / 3)}
+                </span>
               </div>
               <div className="mt-1 text-xs">
-                {m.formation} {m.style} · {m.happiness}% happy · Wage: £{m.wage} pw
+                {m.formation} {m.style} · {personaOf(m.name)} · {m.happiness}% happy · Wage: £{m.wage} pw
               </div>
             </div>
+          </div>
+          <button type="button" className="mt-3 w-full rounded-lg bg-[var(--color-fc-navy)] px-3 py-2 text-sm font-bold text-white" onClick={() => go("tactics")}>
+            Design tactics
+          </button>
+          <p className="mt-3 text-xs text-black/60">
+            Ask him to change the idea. A squad with too many veterans or too many kids plays below its ratings.
+            {state.transferFocus ? ` He is looking for a ${state.transferFocus}.` : " He may sign any position."}
+          </p>
+          <div className="mt-2 flex flex-wrap gap-1">
+            {PHILOSOPHIES.map((idea) => (
+              <button
+                key={idea.id}
+                type="button"
+                onClick={() => useGame.getState().instructManager({ style: idea.id })}
+                className={`rounded-full px-2 py-1 text-[0.65rem] font-bold ${m.style === idea.id ? "bg-[var(--color-fc-lime)]" : "bg-black/5"}`}
+              >
+                {idea.title}
+              </button>
+            ))}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1">
+            {FORMATION_IDS.slice(0, 6).map((shape) => (
+              <button
+                key={shape}
+                type="button"
+                onClick={() => useGame.getState().instructManager({ formation: shape })}
+                className={`rounded-full px-2 py-1 text-[0.65rem] font-bold ${m.formation === shape ? "bg-[var(--color-fc-navy)] text-white" : "bg-black/5"}`}
+              >
+                {shape}
+              </button>
+            ))}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1">
+            {(["Any", "GK", "CB", "CM", "ST", "LW"] as const).map((pos) => (
+              <button
+                key={pos}
+                type="button"
+                onClick={() => useGame.getState().setTransferFocus(pos === "Any" ? null : (pos as Position))}
+                className={`rounded-full px-2 py-1 text-[0.65rem] font-bold ${
+                  (pos === "Any" && !state.transferFocus) || state.transferFocus === pos
+                    ? "bg-[var(--color-fc-lime)]"
+                    : "bg-black/5"
+                }`}
+              >
+                {pos === "Any" ? "Any signing" : pos}
+              </button>
+            ))}
           </div>
           <div className="mt-3 grid grid-cols-2 gap-1 rounded bg-black/5 p-1">
             <button
@@ -983,8 +2132,8 @@ function ManagerScreen() {
                 {m.name} — {ppg} PPG, {state.trophies.length} trophies
               </div>
               <div className="mt-2 flex items-center gap-2 rounded-md bg-black/5 px-2 py-2">
-                <span className="flex h-10 w-10 items-center justify-center rounded-md bg-[var(--color-fc-lime-soft)] text-xl">
-                  {CHAIRMAN_AVATARS[m.avatar ?? 0]}
+                <span className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-md bg-[var(--color-fc-lime-soft)]">
+                  <AvatarPortrait id={m.avatar ?? 0} size={40} />
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="text-xs text-black/60">
@@ -997,19 +2146,28 @@ function ManagerScreen() {
               </div>
             </div>
           ) : (
-            <div className="mt-3 grid grid-cols-4 gap-2 text-center text-[0.65rem]">
-              {staffSlots(state).map((s) => (
-                <button
-                  key={s.key}
-                  type="button"
-                  disabled={!s.canUpgrade}
-                  onClick={() => useGame.getState().liftStaff(s.staffKey!)}
-                  className={`rounded-md p-2 ${s.filled ? "bg-[var(--color-fc-lime-soft)]" : "bg-black/10"}`}
-                >
-                  <div className="mx-auto mb-1 flex h-10 w-10 items-center justify-center rounded bg-black/10 text-lg">👤</div>
-                  {s.label}
-                </button>
-              ))}
+            <div className="mt-3">
+              <p className="mb-2 text-xs text-black/55">
+                {TIER_META[state.tier].name} backroom limit — coaches {staffCap(state.tier, "coach")}, scouts{" "}
+                {staffCap(state.tier, "scout")}, physios {staffCap(state.tier, "physio")}. Promote to unlock more
+                desks.
+              </p>
+              <div className="grid grid-cols-4 gap-2 text-center text-[0.65rem]">
+                {staffSlots(state).map((s) => (
+                  <button
+                    key={s.key}
+                    type="button"
+                    disabled={!s.canUpgrade}
+                    onClick={() => useGame.getState().liftStaff(s.staffKey!)}
+                    className={`rounded-md p-2 ${s.filled ? "bg-[var(--color-fc-lime-soft)]" : "bg-black/10"}`}
+                  >
+                    <div className="mx-auto mb-1 flex h-10 w-10 items-center justify-center overflow-hidden rounded bg-black/10">
+                      <AvatarPortrait id={(s.key.charCodeAt(0) + s.key.charCodeAt(1)) % 12} size={40} />
+                    </div>
+                    {s.label}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </FcCard>
@@ -1019,38 +2177,42 @@ function ManagerScreen() {
 }
 
 function staffSlots(state: ReturnType<typeof useGame.getState>) {
+  const allowed = staffSlotsForTier(state.tier);
   const slots: { key: string; label: string; filled: boolean; canUpgrade: boolean; staffKey?: "coach" | "scout" | "physio" }[] = [];
-  const assistant = state.staff.assistant ?? Math.min(2, state.staff.coach);
-  for (let i = 0; i < 2; i++)
+  const assistant = state.staff.assistant ?? Math.min(allowed.assistant, state.staff.coach);
+  const coachMax = staffCap(state.tier, "coach");
+  const physioMax = staffCap(state.tier, "physio");
+  const scoutMax = staffCap(state.tier, "scout");
+  for (let i = 0; i < allowed.assistant; i++)
     slots.push({
       key: `a${i}`,
       label: "Assistant",
       filled: assistant > i,
-      canUpgrade: i === assistant && state.staff.coach < 5,
+      canUpgrade: i === assistant && state.staff.coach < coachMax,
       staffKey: "coach",
     });
-  for (let i = 0; i < 2; i++)
+  for (let i = 0; i < allowed.physio; i++)
     slots.push({
       key: `p${i}`,
       label: "Physio",
       filled: state.staff.physio > i,
-      canUpgrade: i === state.staff.physio && state.staff.physio < 5,
+      canUpgrade: i === state.staff.physio && state.staff.physio < physioMax,
       staffKey: "physio",
     });
-  for (let i = 0; i < 4; i++)
+  for (let i = 0; i < allowed.coach; i++)
     slots.push({
       key: `c${i}`,
       label: "Coach",
       filled: state.staff.coach > i,
-      canUpgrade: i === state.staff.coach && state.staff.coach < 5,
+      canUpgrade: i === state.staff.coach && state.staff.coach < coachMax,
       staffKey: "coach",
     });
-  for (let i = 0; i < 4; i++)
+  for (let i = 0; i < allowed.scout; i++)
     slots.push({
       key: `s${i}`,
       label: "Scout",
       filled: state.staff.scout > i,
-      canUpgrade: i === state.staff.scout && state.staff.scout < 5,
+      canUpgrade: i === state.staff.scout && state.staff.scout < scoutMax,
       staffKey: "scout",
     });
   return slots;
@@ -1098,8 +2260,8 @@ function ManagersPool() {
               Appoint {m.name} as manager of {club?.name ?? "your club"}?
             </p>
             <div className="mt-3 flex gap-3">
-              <div className="flex h-16 w-16 items-center justify-center rounded-md bg-[var(--color-fc-lime-soft)] text-4xl">
-                {CHAIRMAN_AVATARS[m.avatar ?? 0]}
+              <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-md bg-[var(--color-fc-lime-soft)]">
+                <AvatarPortrait id={m.avatar ?? 0} size={64} />
               </div>
               <div>
                 <div className="font-display text-2xl font-bold uppercase">{m.name}</div>
@@ -1148,8 +2310,8 @@ function ManagersPool() {
             className="w-full rounded-xl bg-white/90 p-3 text-left shadow"
           >
             <div className="flex gap-3">
-              <div className="flex h-14 w-14 items-center justify-center rounded-md bg-[var(--color-fc-lime-soft)] text-3xl">
-                {CHAIRMAN_AVATARS[m.avatar ?? 0]}
+              <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-md bg-[var(--color-fc-lime-soft)]">
+                <AvatarPortrait id={m.avatar ?? 0} size={56} />
               </div>
               <div className="min-w-0 flex-1">
                 <div className="font-display text-xl font-bold uppercase">{m.name}</div>
@@ -1175,12 +2337,11 @@ function ManagersPool() {
 
 function YouthTraining({ kind }: { kind: "academy" | "training" }) {
   const state = useGame();
-  const current = state.facilities[kind];
-  const [target, setTarget] = useState(Math.min(5, current + 1));
+  const current = facRating(state.facilities[kind]);
+  const [target, setTarget] = useState(Math.min(99, current + 1));
   const setFacTarget = useGame((s) => s.setFacTarget);
   const cost = target > current ? facilityStepCost(current, target) : 0;
   const title = kind === "academy" ? "Youth Coaching" : "Training";
-  const rating = current * 20;
   const footerBtns =
     kind === "training"
       ? [
@@ -1213,9 +2374,9 @@ function YouthTraining({ kind }: { kind: "academy" | "training" }) {
               <div className="font-display text-xl font-bold uppercase">{title}</div>
               <div className="mt-1 flex items-center gap-2">
                 <span className="rounded bg-[var(--color-fc-lime-soft)] px-2 text-xs font-bold">RATING</span>
-                <span className="rounded bg-black px-2 font-bold text-white">{rating}</span>
+                <span className="rounded bg-black px-2 font-bold text-white">{current}</span>
               </div>
-              <div className="mt-1 text-xs">Weekly cost: £{weeklyFacilityCost(rating)}</div>
+              <div className="mt-1 text-xs">Weekly cost: {formatMoney(weeklyFacilityCost(current))}</div>
             </div>
           </div>
           <div className="mt-4 flex items-center justify-between gap-2 border-y border-black/10 py-3">
@@ -1227,22 +2388,27 @@ function YouthTraining({ kind }: { kind: "academy" | "training" }) {
                 {"<"} 1
               </FcBtn>
             </div>
-            <div className="font-display text-4xl font-bold tabular-nums">{target}</div>
+            <div className="font-display text-4xl font-semibold tabular-nums">{target}</div>
             <div className="flex gap-1">
-              <FcBtn kind="lime" onClick={() => setTarget((t) => Math.min(5, t + 1))}>
+              <FcBtn kind="lime" onClick={() => setTarget((t) => Math.min(99, t + 1))}>
                 1 {">"}
               </FcBtn>
-              <FcBtn kind="lime" onClick={() => setTarget((t) => Math.min(5, t + 5))}>
+              <FcBtn kind="lime" onClick={() => setTarget((t) => Math.min(99, t + 5))}>
                 5 {">>"}
               </FcBtn>
             </div>
           </div>
           <dl className="mt-3 grid gap-1 text-sm">
             <Row k="Cost" v={formatMoney(cost)} />
-            <Row k="New weekly cost" v={`£${weeklyFacilityCost(target * 20)}`} />
+            <Row k="New weekly cost" v={formatMoney(weeklyFacilityCost(target))} />
             <Row k="Bank balance" v={formatMoney(state.cash)} />
           </dl>
-          <p className="mt-2 text-xs text-black/60">Levels 1–5 (rating {target * 20}). Current level {current}.</p>
+          <p className="mt-2 text-xs text-black/60">
+            {kind === "training"
+              ? "Training rating opens from your squad’s average quality, then climbs to 99."
+              : "Youth rating opens from your young players’ quality, then climbs to 99."}{" "}
+            Current {current}.
+          </p>
           {kind === "training" ? <TrainingFocusPicker /> : null}
         </FcCard>
       </div>
@@ -1435,8 +2601,8 @@ function Career() {
       <div className="px-3 py-3">
         <FcCard>
           <div className="flex gap-3">
-            <div className="flex h-16 w-16 items-center justify-center rounded-md bg-[var(--color-fc-lime-soft)] text-3xl">
-              {CHAIRMAN_AVATARS[state.chairmanAvatar] ?? "👔"}
+            <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-md bg-[var(--color-fc-lime-soft)]">
+              <AvatarPortrait id={state.chairmanAvatar} size={64} />
             </div>
             <div>
               <div className="font-display text-2xl font-bold uppercase">{state.chairmanName}</div>
@@ -1498,7 +2664,7 @@ function Inbox() {
           buttons={[
             { label: "Back", onClick: () => go("dash") },
             { label: "Clear", onClick: clearMail },
-            { label: "Transfers", onClick: () => go("market") },
+            { label: "Transfers", onClick: () => go("budget") },
           ]}
         />
       }
@@ -1526,8 +2692,8 @@ function Inbox() {
                 </FcBtn>
               </div>
               {m.tag === "Offer" ? (
-                <FcBtn className="mt-2 w-full" kind="lime" onClick={() => go("market")}>
-                  Open market
+                <FcBtn className="mt-2 w-full" kind="lime" onClick={() => go("budget")}>
+                  Transfer budget
                 </FcBtn>
               ) : null}
             </FcCard>
@@ -1539,106 +2705,36 @@ function Inbox() {
 }
 
 function Settings() {
-  const stashSlot = useGame((s) => s.stashSlot);
-  const exportCareer = useGame((s) => s.exportCareer);
-  const resumeSlot = useGame((s) => s.resumeSlot);
-  const abandon = useGame((s) => s.abandon);
-  const [slots, setSlots] = useState(() => listSlots());
-  const [prefOpen, setPrefOpen] = useState(false);
-  const [lang, setLang] = useState("English");
-  const saveSlot = (id: number) => {
-    stashSlot(id);
-    setSlots(listSlots());
-  };
-  const download = () => {
-    const raw = exportCareer();
-    if (!raw) return;
-    const blob = new Blob([raw], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "tyrone-career.json";
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+  const currency = useGame((s) => s.currency);
+  const setCurrency = useGame((s) => s.setCurrency);
   return (
-    <FcShell
-      footer={
-        <FcFooter
-          buttons={[
-            { label: "Back", onClick: () => go("dash") },
-            { label: "Preferences", onClick: () => setPrefOpen((p) => !p), primary: true },
-          ]}
-        />
-      }
-    >
+    <FcShell footer={<FcFooter buttons={[{ label: "Back", onClick: () => go("dash"), primary: true }]} />}>
       <FcHeader title="Settings" />
       <div className="space-y-3 px-3 py-3">
         <FcCard>
-          <div className="font-display text-lg font-bold uppercase">Local career save</div>
-          <p className="mt-1 text-xs text-black/60">
-            Careers stay in this browser. Cloud email/password save from the classic app is not available here.
-          </p>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <FcBtn kind="white" onClick={() => saveSlot(1)}>
-              Save
+          <div className="font-display text-lg font-semibold uppercase">Preferences</div>
+          <div className="mt-3 grid gap-3">
+            <label className="text-xs font-semibold tracking-wide text-black/50 uppercase">
+              Currency
+              <select
+                className="mt-1 w-full rounded-md border border-black/15 bg-white px-3 py-2 text-sm font-normal normal-case text-black"
+                value={currency ?? "GBP"}
+                onChange={(e) => setCurrency(e.target.value as MoneyCurrency)}
+              >
+                <option value="GBP">£ Pound (GBP)</option>
+                <option value="EUR">€ Euro (EUR)</option>
+                <option value="USD">$ Dollar (USD)</option>
+              </select>
+            </label>
+            <p className="text-xs text-black/55">Display only — balances stay in club pounds under the hood.</p>
+            <FcBtn kind="white" onClick={() => go("about")}>
+              About
             </FcBtn>
-            <FcBtn
-              kind="white"
-              disabled={!slots.length}
-              onClick={() => {
-                const id = slots[0]?.id;
-                if (id != null) resumeSlot(id);
-              }}
-            >
-              Load
+            <FcBtn kind="white" onClick={() => go("inbox")}>
+              Inbox
             </FcBtn>
-            <FcBtn kind="lime" onClick={download}>
-              Export
-            </FcBtn>
-            <FcBtn kind="red" onClick={abandon}>
-              New game
-            </FcBtn>
-          </div>
-          <div className="mt-3 grid gap-2">
-            {[1, 2, 3, 4, 5].map((id) => {
-              const meta = slots.find((s) => s.id === id);
-              return (
-                <FcBtn key={id} kind="white" onClick={() => saveSlot(id)}>
-                  Slot {id}
-                  {meta ? `: ${meta.label}` : " (empty)"}
-                </FcBtn>
-              );
-            })}
           </div>
         </FcCard>
-        {prefOpen ? (
-          <FcCard>
-            <div className="font-display text-lg font-bold uppercase">Preferences</div>
-            <div className="mt-2 grid gap-2">
-              <label className="text-xs font-bold tracking-wide text-black/50 uppercase">
-                Language
-                <select
-                  className="mt-1 w-full rounded-md border border-black/15 bg-white px-3 py-2 text-sm font-normal normal-case text-black"
-                  value={lang}
-                  onChange={(e) => setLang(e.target.value)}
-                >
-                  <option>English</option>
-                  <option disabled>More languages soon</option>
-                </select>
-              </label>
-              <FcBtn kind="white" onClick={() => go("about")}>
-                About
-              </FcBtn>
-              <FcBtn kind="white" onClick={() => go("inbox")}>
-                Inbox
-              </FcBtn>
-              <FcBtn kind="white" onClick={() => go("medical")}>
-                Medical centre
-              </FcBtn>
-            </div>
-          </FcCard>
-        ) : null}
       </div>
     </FcShell>
   );
@@ -1653,7 +2749,7 @@ function Medical() {
       footer={
         <FcFooter
           buttons={[
-            { label: "Back", onClick: () => go("dash") },
+            { label: "Back", onClick: () => go("stadium") },
             {
               label: level >= 5 ? "Maxed" : "Upgrade",
               onClick: () => liftFacility("medical"),
@@ -1667,9 +2763,10 @@ function Medical() {
       <FcHeader title="Medical Centre" />
       <div className="px-3 py-3">
         <FcCard>
-          <div className="font-display text-xl font-bold uppercase">Medical</div>
+          <div className="font-display text-xl font-semibold uppercase">Medical</div>
           <p className="mt-2 text-sm text-black/70">
-            Level {level} (rating {level * 20}). Higher levels cut injury time and speed fitness recovery.
+            Stadium upgrade · Level {level}/5 (rating {level * 20}). Higher levels cut injury time and speed fitness
+            recovery.
           </p>
           <dl className="mt-3 grid gap-1 text-sm">
             <Row k="Physio staff" v={String(state.staff.physio)} />
@@ -1707,9 +2804,11 @@ function Rivals() {
             {table.map((row, i) => {
               const c = state.clubs.find((x) => x.id === row.id);
               return (
-                <li key={row.id} className={`flex justify-between py-1 ${row.id === USER ? "font-bold text-[var(--color-fc-forest)]" : ""}`}>
-                  <span>
-                    {i + 1}. {c?.name}
+                <li key={row.id} className={`flex items-center justify-between gap-2 py-1 ${row.id === USER ? "font-bold text-[var(--color-fc-forest)]" : ""}`}>
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="w-4 tabular-nums">{i + 1}.</span>
+                    {c ? <Crest primary={c.primary} secondary={c.secondary} short={c.short} size={20} /> : null}
+                    <span className="truncate">{c?.name}</span>
                   </span>
                   <span className="tabular-nums">{row.pts} pts</span>
                 </li>
@@ -1783,14 +2882,19 @@ function ClubList() {
       <div className="px-3 py-3">
         <FcCard>
           <ul className="grid gap-1 text-sm">
-            {table.map((row, i) => (
-              <li key={row.id} className={`flex justify-between py-1 ${row.id === USER ? "font-bold" : ""}`}>
-                <span>
-                  {i + 1}. {state.clubs.find((c) => c.id === row.id)?.name}
-                </span>
-                <span className="tabular-nums">{row.pts}</span>
-              </li>
-            ))}
+            {table.map((row, i) => {
+              const c = state.clubs.find((x) => x.id === row.id);
+              return (
+                <li key={row.id} className={`flex items-center justify-between gap-2 py-1 ${row.id === USER ? "font-bold" : ""}`}>
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="w-4 tabular-nums">{i + 1}.</span>
+                    {c ? <Crest primary={c.primary} secondary={c.secondary} short={c.short} size={20} /> : null}
+                    <span className="truncate">{c?.name}</span>
+                  </span>
+                  <span className="tabular-nums">{row.pts}</span>
+                </li>
+              );
+            })}
           </ul>
         </FcCard>
       </div>
@@ -1837,134 +2941,66 @@ function About() {
 
 function Market() {
   const state = useGame();
-  const buy = useGame((s) => s.buy);
-  const loan = useGame((s) => s.loan);
-  const takeOffer = useGame((s) => s.takeOffer);
-  const rejectOffer = useGame((s) => s.rejectOffer);
-  const bumpOffer = useGame((s) => s.bumpOffer);
-  const counterTalks = useGame((s) => s.counterTalks);
-  const acceptTalks = useGame((s) => s.acceptTalks);
-  const walkTalks = useGame((s) => s.walkTalks);
-  const list = state.players.filter((p) => p.clubId === "market").sort((a, b) => b.fee - a.fee);
-  const offerP = state.players.find((p) => p.id === state.offer?.playerId);
-  const deal = state.deal;
-  const dealP = state.players.find((p) => p.id === deal?.playerId);
-  const feeVal = deal?.offerFee ?? 0;
-  const wageVal = deal?.offerWage ?? 0;
-  const [fee, setFee] = useState<number | null>(null);
-  const [wage, setWage] = useState<number | null>(null);
-  const offerFee = fee ?? feeVal;
-  const offerWage = wage ?? wageVal;
+  const mode = useGame((s) => s.transferBudgetMode);
+  const setBudget = useGame((s) => s.setBudget);
+  const modes: BudgetMode[] = ["max", "normal", "cautious", "strict", "zero"];
+  const info = budgetLabel(mode);
   return (
     <FcShell
       footer={
         <FcFooter
           buttons={[
             { label: "Back", onClick: () => go("finances") },
-            { label: "Budget", onClick: () => go("budget") },
+            { label: "Done", onClick: () => go("finances"), primary: true },
           ]}
         />
       }
     >
       <FcHeader title="Transfers" />
-      <div className="flex-1 space-y-2 overflow-y-auto px-3 py-3">
+      <div className="px-3 py-3">
         <FcCard>
-          <div className="text-sm">
-            Transfer budget: <strong>{formatMoney(transferCap(state))}</strong> ({state.transferBudgetMode})
+          <div className="font-display text-xl font-semibold uppercase">Transfer budget</div>
+          <div className="mt-3 inline-block rounded bg-[var(--color-fc-forest)] px-3 py-1.5 font-display text-2xl font-semibold text-white tabular-nums">
+            {formatMoney(transferCap(state))}
+          </div>
+          <p className="mt-2 text-sm text-black/70">
+            {info.title}: {info.body}
+          </p>
+          <p className="mt-1 text-xs text-black/55">Manager happiness: {state.manager.happiness}%</p>
+          <div className="mt-4 grid gap-2">
+            {modes.map((m) => {
+              const row = budgetLabel(m);
+              return (
+                <FcSelectRow key={m} selected={mode === m} onClick={() => setBudget(m)}>
+                  <span className="font-semibold">{row.title}</span>
+                  <span className="text-black/60"> — {row.body}</span>
+                </FcSelectRow>
+              );
+            })}
           </div>
         </FcCard>
-        {state.offer && offerP ? (
-          <FcCard>
-            <div className="font-bold">
-              {state.offer.from} want {offerP.name} for {money(state.offer.fee)}.
-            </div>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <FcBtn kind="lime" onClick={takeOffer}>
-                Accept
-              </FcBtn>
-              <FcBtn kind="white" onClick={bumpOffer}>
-                Ask more
-              </FcBtn>
-              <FcBtn kind="white" onClick={rejectOffer}>
-                Decline
-              </FcBtn>
-            </div>
-          </FcCard>
-        ) : null}
-        {deal && dealP ? (
-          <FcCard>
-            <div className="font-bold">
-              {dealP.name} · round {deal.round + 1}/4
-            </div>
-            <p className="text-sm">
-              Ask {money(deal.askFee)} · £{deal.askWage}/wk
-            </p>
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <label className="text-xs">
-                Fee
-                <input
-                  type="number"
-                  className="mt-1 w-full rounded border px-2 py-1"
-                  value={offerFee}
-                  onChange={(e) => setFee(Number(e.target.value) || 0)}
-                />
-              </label>
-              <label className="text-xs">
-                Wage
-                <input
-                  type="number"
-                  className="mt-1 w-full rounded border px-2 py-1"
-                  value={offerWage}
-                  onChange={(e) => setWage(Number(e.target.value) || 0)}
-                />
-              </label>
-            </div>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <FcBtn kind="lime" onClick={acceptTalks}>
-                Meet ask
-              </FcBtn>
-              <FcBtn kind="white" disabled={deal.round >= 3} onClick={() => counterTalks(offerFee, offerWage)}>
-                Counter
-              </FcBtn>
-              <FcBtn kind="white" onClick={walkTalks}>
-                Walk
-              </FcBtn>
-            </div>
-          </FcCard>
-        ) : null}
-        {list.map((p) => (
-          <FcCard key={p.id}>
-            <div className="flex justify-between gap-2">
-              <div>
-                <div className="font-bold">
-                  {p.name} <span className="text-black/50">{p.pos}</span>
-                </div>
-                <div className="text-xs text-black/60">
-                  {p.age} · OVR {maskOvr(ovr(p), state.staff.scout)} · {money(p.wage)}/wk
-                </div>
-              </div>
-              <div className="font-display text-xl font-bold text-[var(--color-fc-forest)]">{money(p.fee)}</div>
-            </div>
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <FcBtn kind="white" onClick={() => loan(p.id)}>
-                Loan
-              </FcBtn>
-              <FcBtn kind="lime" onClick={() => buy(p.id)}>
-                Open talks
-              </FcBtn>
-            </div>
-          </FcCard>
-        ))}
       </div>
     </FcShell>
   );
 }
 
-function Row({ k, v, muted }: { k: string; v: ReactNode; muted?: boolean }) {
+function Row({
+  k,
+  v,
+  muted,
+  tone,
+}: {
+  k: string;
+  v: ReactNode;
+  muted?: boolean;
+  tone?: "good" | "bad" | "warn";
+}) {
+  const valueTone =
+    tone === "good" ? "text-[#3E7D32] font-extrabold" : tone === "bad" ? "text-[#a50e0e] font-extrabold" : tone === "warn" ? "text-[#a50e0e] font-extrabold" : "font-extrabold";
   return (
-    <div className={`flex justify-between gap-3 ${muted ? "text-black/45" : ""}`}>
-      <dt>{k}</dt>
-      <dd className="text-right font-medium">{v}</dd>
+    <div className={`flex justify-between gap-3 border-t border-black/10 py-1 ${muted ? "text-black/45" : ""}`}>
+      <dt className="font-bold text-black/70">{k}</dt>
+      <dd className={`text-right ${valueTone}`}>{v}</dd>
     </div>
   );
 }

@@ -476,11 +476,26 @@ export const TRAININGS: { id: TrainingFocus; title: string; body: string }[] = [
   { id: "youth", title: "Youth", body: "Extra work for players 21 and under." },
 ];
 
-export const TIER_META: Record<1 | 2 | 3, { name: string; blurb: string }> = {
-  3: { name: "Harbor League", blurb: "Where chairs are earned." },
-  2: { name: "Marrow Championship", blurb: "One step from the lights." },
-  1: { name: "Tyrone Premier", blurb: "The brass ring." },
-};
+export {
+  TIER_META,
+  TIER_CLUBS,
+  TIER_REPS,
+  PRIZE,
+  CUP_PRIZE,
+  START_BUDGET,
+  START_TICKET,
+  objectiveText,
+  objectiveHit,
+  promoSlots,
+  relegSlots,
+  debtLimit,
+  ticketPrice,
+  ticketBand,
+  wageBand,
+  boxPrice,
+  NATIONS as FA_NATIONS,
+  type LeagueTier,
+} from "./england";
 
 export const SQUAD_SHAPE: Position[] = [
   "GK",
@@ -503,119 +518,67 @@ export const SQUAD_SHAPE: Position[] = [
   "ST",
 ];
 
-export const FIRST = [
-  "Idris", "Mateo", "Soren", "Leandro", "Kwame", "Jonas", "Rafa", "Nico", "Eliud",
-  "Harun", "Pavel", "Kenji", "Omar", "Luca", "Samir", "Ivo", "Tariq", "Bruno",
-  "Casper", "Yuri", "Felix", "Noam", "Dario", "Hugo", "Ansel", "Keita", "Marco",
-  "Ellis", "Rohan", "Piotr", "Nabil", "Theo", "Oscar", "Milan", "Ade", "Lars",
-  "Enzo", "Farid", "Gideon", "Hector", "Jamal", "Kofi", "Leon", "Musa", "Nils",
-  "Paolo", "Remy", "Stefan", "Tomas", "Ugo", "Viktor", "Wendell", "Yusuf", "Zane",
-  "Arlo", "Basil", "Cedric", "Darius", "Emil", "Finn", "Iker", "Joss", "Kai",
-  "Lior", "Moss", "Ned", "Otto", "Pax", "Quin", "Rio", "Sol", "Taye", "Uri",
-  "Vince", "Wes", "Yann", "Zeke", "Andre", "Biko", "Cai", "Davi", "Elias",
-];
+export { ENG_FIRST as FIRST, ENG_LAST as LAST, ENG_NATIONS as NATIONS } from "./england";
 
-export const LAST = [
-  "Voss", "Keller", "Mensah", "Duarte", "Rahman", "Novak", "Berg", "Diallo",
-  "Horvat", "Kone", "Larsen", "Moreau", "Ndiaye", "Petrov", "Sato", "Traore",
-  "Ueda", "Vogel", "Adebayo", "Banda", "Correia", "Dlamini", "Fofana", "Gashi",
-  "Haddad", "Ilic", "Jallow", "Khoury", "Mbeki", "Osei", "Paredes", "Quaye",
-  "Sow", "Tadic", "Yeboah", "Ashcroft", "Brant", "Colfer", "Drewe", "Elkins",
-  "Farrow", "Greeve", "Hollis", "Ingram", "Jory", "Kestel", "Lowry", "Merrick",
-  "Olum", "Pryce", "Quill", "Renn", "Stowe", "Tarrant", "Ulric", "Venn", "Wick",
-  "Yarrow", "Zeller", "Marlow", "Pineda", "Costa", "Ibanez", "Okoye", "Nash",
-];
-
-export const NATIONS = [
-  "Marrow", "Velden", "Ostera", "Kite", "Brava", "Luneth", "Sable", "Quorra",
-  "Nima", "Halden", "Ashmere", "Goldwater",
-];
-
+/** Real-world style shirt / commercial sponsors common for English clubs. */
 export const SPONSORS = [
-  "Harbor Grain", "Brassline", "Velden Rail", "Night Oil", "Kite Air",
-  "Sable Cement", "Luneth Mutual", "Quay & Co", "Northglass Glass",
+  "Carabao",
+  "Emirates",
+  "Standard Chartered",
+  "AIA",
+  "Sky Bet",
+  "Utilita",
+  "Bet365",
+  "Vanarama",
+  "Dafabet",
+  "32Red",
+  "ManBetX",
+  "FXPro",
+  "Ideal Heating",
+  "BoyleSports",
+  "Cinch",
+  "Holsten",
+  "Carlsberg",
+  "Budweiser",
+  "American Express",
+  "Expedia",
+  "Castore",
+  "Nike",
+  "Adidas",
+  "Umbro",
+  "Puma",
+  "Macron",
+  "Hummel",
 ];
 
-type Template = {
-  id: string;
-  name: string;
-  short: string;
-  city: string;
-  primary: string;
-  secondary: string;
-  stadium: string;
-  style: Philosophy;
-};
-
-export const TIER_CLUBS: Record<1 | 2 | 3, Template[]> = {
-  3: [
-    { id: "bwa", name: "Blackwater Athletic", short: "BWA", city: "Port Blackwater", primary: "#14261f", secondary: "#d6b25e", stadium: "Blackwater Dock", style: "press" },
-    { id: "psv", name: "Port Salvage", short: "PSV", city: "Salvage", primary: "#9d2b3a", secondary: "#efe6d2", stadium: "The Breakwater", style: "direct" },
-    { id: "kmu", name: "Kingsmere United", short: "KMU", city: "Kingsmere", primary: "#1c3d66", secondary: "#e7f2ea", stadium: "Mere Park", style: "possession" },
-    { id: "ash", name: "Ashford Rovers", short: "ASH", city: "Ashford", primary: "#6b3a2a", secondary: "#f4f7f2", stadium: "Cinder Ground", style: "counter" },
-    { id: "rdl", name: "Red Lantern", short: "RDL", city: "Lantern Hill", primary: "#7a1e2b", secondary: "#d6b25e", stadium: "Lantern Yard", style: "direct" },
-    { id: "vlh", name: "Vale & Harbour", short: "VLH", city: "Vale", primary: "#1f6b4a", secondary: "#efe6d2", stadium: "Estuary Road", style: "possession" },
-    { id: "ngt", name: "Northglass Town", short: "NGT", city: "Northglass", primary: "#3c4d5c", secondary: "#d6b25e", stadium: "Glassworks", style: "youth" },
-  ],
-  2: [
-    { id: "osc", name: "Ostera City", short: "OSC", city: "Ostera", primary: "#0e2a4a", secondary: "#d6b25e", stadium: "Civic Bowl", style: "possession" },
-    { id: "sbw", name: "Sable Wednesday", short: "SBW", city: "Sable", primary: "#2a2e33", secondary: "#efe6d2", stadium: "Midweek Park", style: "counter" },
-    { id: "lun", name: "Luneth Athletic", short: "LUN", city: "Luneth", primary: "#1f4d3a", secondary: "#e7f2ea", stadium: "Green Ledger", style: "press" },
-    { id: "brv", name: "Brava United", short: "BRV", city: "Brava", primary: "#6e2b3c", secondary: "#f4f7f2", stadium: "Old Brava", style: "direct" },
-    { id: "qrr", name: "Quorra Rangers", short: "QRR", city: "Quorra", primary: "#3d2a68", secondary: "#d6b25e", stadium: "Ranger Gate", style: "press" },
-    { id: "hlp", name: "Halden Park", short: "HLP", city: "Halden", primary: "#8a6232", secondary: "#142016", stadium: "The Park", style: "possession" },
-    { id: "kti", name: "Kite Island", short: "KTI", city: "Kite", primary: "#1a4d6e", secondary: "#efe6d2", stadium: "Windward", style: "youth" },
-  ],
-  1: [
-    { id: "vlr", name: "Velden Royal", short: "VLR", city: "Velden", primary: "#1a2744", secondary: "#d6b25e", stadium: "Royal Mile", style: "possession" },
-    { id: "mrc", name: "Marrow Coast", short: "MRC", city: "Marrow", primary: "#12352c", secondary: "#efe6d2", stadium: "Coast Ground", style: "press" },
-    { id: "nmp", name: "Nima Palace", short: "NMP", city: "Nima", primary: "#4a2c6a", secondary: "#f4f7f2", stadium: "Palace Lawn", style: "direct" },
-    { id: "cro", name: "Crown Ostera", short: "CRO", city: "Ostera", primary: "#6b1d2a", secondary: "#d6b25e", stadium: "Crown Ring", style: "possession" },
-    { id: "hsb", name: "High Sable", short: "HSB", city: "Sable", primary: "#22262b", secondary: "#d6b25e", stadium: "High Stand", style: "counter" },
-    { id: "stb", name: "Saint Brava", short: "STB", city: "Brava", primary: "#143a28", secondary: "#efe6d2", stadium: "Saint's End", style: "press" },
-    { id: "gld", name: "Goldwater", short: "GLD", city: "Goldwater", primary: "#3a2f14", secondary: "#e7d7a1", stadium: "Bullion Park", style: "direct" },
-  ],
-};
-
-export const TIER_REPS: Record<1 | 2 | 3, number[]> = {
-  3: [63, 59, 56, 53, 50, 47, 44],
-  2: [74, 71, 68, 65, 62, 59, 56],
-  1: [88, 84, 81, 78, 75, 72, 69],
-};
-
-export function objectiveText(tier: 1 | 2 | 3) {
-  if (tier === 3) return "Finish in the Harbor League top four.";
-  if (tier === 2) return "Finish in the Marrow Championship top two.";
-  return "Finish in the Tyrone Premier top four.";
+/** Max backroom staff quality by division (1 = Premier … 5 = National League). */
+export function staffCap(tier: number, key: "coach" | "scout" | "physio"): number {
+  const t = Math.max(1, Math.min(5, tier | 0)) as 1 | 2 | 3 | 4 | 5;
+  const table: Record<1 | 2 | 3 | 4 | 5, Record<"coach" | "scout" | "physio", number>> = {
+    5: { coach: 2, scout: 1, physio: 1 },
+    4: { coach: 3, scout: 2, physio: 2 },
+    3: { coach: 4, scout: 3, physio: 2 },
+    2: { coach: 5, scout: 4, physio: 4 },
+    1: { coach: 5, scout: 5, physio: 5 },
+  };
+  return table[t][key];
 }
 
-export function objectiveHit(tier: 1 | 2 | 3, pos: number) {
-  if (tier === 3) return pos <= 4;
-  if (tier === 2) return pos <= 2;
-  return pos <= 4;
+/** How many appointable slots of each role the division allows (UI grid). */
+export function staffSlotsForTier(tier: number): { assistant: number; physio: number; coach: number; scout: number } {
+  const t = Math.max(1, Math.min(5, tier | 0));
+  if (t >= 5) return { assistant: 1, physio: 1, coach: 2, scout: 1 };
+  if (t === 4) return { assistant: 1, physio: 2, coach: 3, scout: 2 };
+  if (t === 3) return { assistant: 2, physio: 2, coach: 3, scout: 3 };
+  if (t === 2) return { assistant: 2, physio: 3, coach: 4, scout: 4 };
+  return { assistant: 2, physio: 4, coach: 4, scout: 4 };
 }
-
-export const PRIZE: Record<1 | 2 | 3, number[]> = {
-  3: [780000, 520000, 340000, 220000, 140000, 90000, 50000, 30000],
-  2: [2200000, 1500000, 980000, 640000, 420000, 260000, 140000, 80000],
-  1: [6400000, 4200000, 2800000, 1800000, 1100000, 700000, 360000, 180000],
-};
-
-export const CUP_PRIZE: Record<1 | 2 | 3, number> = {
-  3: 260000,
-  2: 700000,
-  1: 1800000,
-};
 
 export function capacity(level: number) {
   return [9000, 14000, 21000, 30000, 42000][level - 1] ?? 9000;
 }
 
 export const OVERDRAFT_RATE = 0.0035;
-
-export function debtLimit(tier: 1 | 2 | 3) {
-  return tier === 1 ? 8_000_000 : tier === 2 ? 3_500_000 : 1_500_000;
-}
 
 export type StandSpec = {
   id: StandId;
@@ -725,6 +688,15 @@ export function standFacts(stands: Stands) {
     boxes += STANDS[id].boxes[tier] ?? 0;
   }
   return { seats, boxes };
+}
+
+/** National League jobs are a fraction of a Premier League stand. */
+export function divisionBuildScale(tier: 1 | 2 | 3 | 4 | 5) {
+  if (tier === 1) return 1;
+  if (tier === 2) return 0.55;
+  if (tier === 3) return 0.32;
+  if (tier === 4) return 0.16;
+  return 0.07;
 }
 
 export function nextBuild(id: StandId, tier: number) {

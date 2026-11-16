@@ -12,10 +12,12 @@ import {
   declineOffer,
   hireManager,
   loanIn,
+  listPlayer,
   loanOut,
   openDeal,
   recall,
   renegotiate,
+  offerContract,
   renew,
   repay,
   sackManager,
@@ -39,18 +41,25 @@ import {
 } from "./actions";
 import type { BudgetMode, ClubManager } from "./types";
 import {
+  bootNoise,
   bumpCrowd,
   cardNoise,
+  ensureTheme,
+  foulWhistle,
   goalNoise,
   setMuted,
   startCrowd,
+  startTheme,
   stopCrowd,
+  stopTheme,
   unlockAudio,
   whistleNoise,
 } from "./audio";
-import { stepMatch } from "./match";
-import { ACTIVE_KEY, exportSave, importSave, loadFromSlot, saveToSlot, writeActive } from "./saves";
-import type { BuildUp, CreateInput, FormationId, LineHeight, Mentality, Philosophy, SaveData, Screen, StandId, TrainingFocus } from "./types";
+import { applyKickOffScene, stepMatch, userSubstitute } from "./match";
+import { ACTIVE_KEY, clearSlot, exportSave, importSave, loadFromSlot, saveToSlot, writeActive } from "./saves";
+import { SAVE_VERSION } from "./england";
+import type { BuildUp, CreateInput, FormationId, LineHeight, Mentality, Philosophy, Position, SaveData, Screen, StandId, TrainingFocus } from "./types";
+import { setDisplayCurrency, type MoneyCurrency } from "./util";
 import {
   beginLive,
   blankSave,
@@ -60,6 +69,11 @@ import {
   openNextSeason,
   resolveWeek,
 } from "./world";
+
+function syncPrefs(save: Pick<SaveData, "muted" | "currency">) {
+  setMuted(!!save.muted);
+  setDisplayCurrency(save.currency === "EUR" || save.currency === "USD" ? save.currency : "GBP");
+}
 
 type Store = SaveData & {
   booted: boolean;
@@ -80,6 +94,9 @@ type Store = SaveData & {
   walkTalks: () => void;
   loan: (id: string) => void;
   sell: (id: string) => void;
+  listForSale: (id: string) => void;
+  advanceMatchStage: () => void;
+  applyHtChanges: () => void;
   loanAway: (id: string) => void;
   recallPlayer: (id: string) => void;
   renewPlayer: (id: string) => void;
@@ -114,6 +131,8 @@ type Store = SaveData & {
   leaveReport: () => void;
   nextSeason: () => void;
   toggleMute: () => void;
+  setCurrency: (currency: MoneyCurrency) => void;
+  deleteSlot: (id: number) => void;
   stashSlot: (id: number, label?: string) => void;
   resumeSlot: (id: number) => void;
   exportCareer: () => string | null;
@@ -130,7 +149,12 @@ type Store = SaveData & {
   advanceNews: () => void;
   pickSponsor: (name: string, fee: number, untilSeason: number) => void;
   setTickets: (price: number) => void;
+  instructManager: (patch: { style?: Philosophy; formation?: FormationId }) => void;
+  setTransferFocus: (pos: Position | null) => void;
   setWinBonus: (pct: 0 | 10 | 20) => void;
+  answerBid: (accept: boolean) => void;
+  answerContract: (wage: number, years: number) => void;
+  rejectContract: () => void;
 };
 
 let hooked = false;
@@ -155,6 +179,9 @@ function write(state: Store) {
     walkTalks: _wt,
     loan: _loan,
     sell: _sell,
+    listForSale: _lfs,
+    advanceMatchStage: _ams,
+    applyHtChanges: _aht,
     loanAway: _la,
     recallPlayer: _rp,
     renewPlayer: _rn,
@@ -189,6 +216,8 @@ function write(state: Store) {
     leaveReport: _lr,
     nextSeason: _nx,
     toggleMute: _tm,
+    setCurrency: _scur,
+    deleteSlot: _dslot,
     stashSlot: _sslot,
     resumeSlot: _rslot,
     exportCareer: _ex,
@@ -205,7 +234,12 @@ function write(state: Store) {
     advanceNews: _an,
     pickSponsor: _ps,
     setTickets: _stix,
+    instructManager: _ask,
+    setTransferFocus: _focus,
     setWinBonus: _swb,
+    answerBid: _abid,
+    answerContract: _acon,
+    rejectContract: _rcon,
     ...data
   } = state;
   try {
@@ -225,19 +259,31 @@ export const useGame = create<Store>((set, get) => ({
       const raw = localStorage.getItem(ACTIVE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw) as SaveData;
+        /* Wipe any career that is not the current save schema so updates always relaunch fresh. */
         if (
-          (parsed?.version === 1 || parsed?.version === 2 || parsed?.version === 3 || parsed?.version === 4) &&
+          parsed?.version === SAVE_VERSION &&
           parsed.active &&
           Array.isArray(parsed.players) &&
           Array.isArray(parsed.weeks)
         ) {
           const save = normalize(parsed);
-          setMuted(!!save.muted);
+          syncPrefs(save);
           set({ ...save, booted: true, notice: null });
-        } else set({ ...blankSave(), phase: "create", booted: true, notice: null });
-      } else set({ ...blankSave(), phase: "create", booted: true, notice: null });
+          if (!save.muted) {
+            unlockAudio();
+            ensureTheme();
+          }
+        } else {
+          try {
+            localStorage.removeItem(ACTIVE_KEY);
+          } catch {
+            /* ignore */
+          }
+          set({ ...blankSave(), phase: "title", booted: true, notice: null });
+        }
+      } else set({ ...blankSave(), phase: "title", booted: true, notice: null });
     } catch {
-      set({ ...blankSave(), phase: "create", booted: true, notice: null });
+      set({ ...blankSave(), phase: "title", booted: true, notice: null });
     }
     if (!hooked) {
       hooked = true;
@@ -282,7 +328,15 @@ export const useGame = create<Store>((set, get) => ({
   clearNotice: () => set({ notice: null }),
   goCreate: () => set({ phase: "create", notice: null }),
   backTitle: () => set({ phase: "title" }),
-  startClub: (input) => set({ ...createGame(input), booted: true, notice: null }),
+  startClub: (input) => {
+    const save = createGame(input);
+    syncPrefs(save);
+    set({ ...save, booted: true, notice: null });
+    if (!save.muted) {
+      unlockAudio();
+      ensureTheme();
+    }
+  },
   abandon: () => {
     try {
       localStorage.removeItem(ACTIVE_KEY);
@@ -290,6 +344,7 @@ export const useGame = create<Store>((set, get) => ({
       /* ignore */
     }
     stopCrowd();
+    stopTheme();
     set({ ...blankSave(), phase: "create", booted: true, notice: null });
   },
   setScreen: (screen) => set({ screen, notice: null }),
@@ -301,6 +356,83 @@ export const useGame = create<Store>((set, get) => ({
   walkTalks: () => get().act(walkDeal(get())),
   loan: (id) => get().act(loanIn(get(), id)),
   sell: (id) => get().act(sellPlayer(get(), id)),
+  listForSale: (id) => get().act(listPlayer(get(), id)),
+  advanceMatchStage: () => {
+    const live = get().live;
+    if (!live || live.finished) return;
+    const stage = live.stage ?? "live";
+    if (stage === "tunnel") {
+      set({ live: { ...live, stage: "lineups", paused: true } });
+      return;
+    }
+    if (stage === "lineups") {
+      set({ live: { ...live, stage: "tactics", paused: true } });
+      return;
+    }
+    if (stage === "tactics") {
+      const kicked = applyKickOffScene(
+        {
+          ...live,
+          stage: "live",
+          paused: false,
+          log: [
+            ...live.log,
+            {
+              minute: 0,
+              kind: "info",
+              text: `Kick-off. ${get().manager.name} has the side set.`,
+            },
+          ],
+        },
+        "home",
+      );
+      set({ live: kicked });
+      return;
+    }
+    if (stage === "ht-talk") {
+      set({ live: { ...live, stage: "ht-changes", paused: true } });
+      return;
+    }
+    if (stage === "ht-changes") {
+      get().applyHtChanges();
+    }
+  },
+  applyHtChanges: () => {
+    let live = get().live;
+    if (!live) return;
+    const plan = live.htPlan ?? [];
+    for (const change of plan) {
+      const result = userSubstitute(live, get().players, change.offId, change.onId);
+      if (typeof result !== "string") {
+        live = {
+          ...result,
+          log: [
+            ...result.log,
+            {
+              minute: live.minute,
+              kind: "sub",
+              text: `${get().manager.name} sends ${get().players.find((p) => p.id === change.onId)?.name ?? "a sub"} on for ${get().players.find((p) => p.id === change.offId)?.name ?? "a starter"} (${change.reason}).`,
+            },
+          ],
+        };
+      }
+    }
+    const restarted = applyKickOffScene(
+      {
+        ...live,
+        stage: "live",
+        paused: false,
+        htTalk: null,
+        htPlan: null,
+        log: [
+          ...live.log,
+          { minute: live.minute, kind: "info", text: "Second half underway. Kick-off." },
+        ],
+      },
+      "away",
+    );
+    set({ live: restarted });
+  },
   loanAway: (id) => get().act(loanOut(get(), id)),
   recallPlayer: (id) => get().act(recall(get(), id)),
   renewPlayer: (id) => get().act(renew(get(), id)),
@@ -323,12 +455,22 @@ export const useGame = create<Store>((set, get) => ({
   setLine: (line) => set({ line }),
   setBuild: (build) => set({ build }),
   toPress: () => {
+    // Team talk removed — Watch goes straight into the match
+    unlockAudio();
+    setMuted(get().muted);
+    stopTheme();
     const state = ensureXi(get());
-    set({ ...state, phase: "press", notice: null });
+    const next = beginLive(state, "measured");
+    if (!get().muted) {
+      startCrowd();
+      whistleNoise();
+    }
+    set({ ...next, notice: null });
   },
   pickPress: (tone) => {
     unlockAudio();
     setMuted(get().muted);
+    stopTheme();
     const state = ensureXi(get());
     const next = beginLive(state, tone);
     if (!get().muted) {
@@ -340,15 +482,20 @@ export const useGame = create<Store>((set, get) => ({
   quickSim: () => {
     const state = ensureXi(get());
     stopCrowd();
+    if (!get().muted) ensureTheme();
     set({ ...resolveWeek(state, null), notice: null });
   },
   advanceBye: () => set({ ...resolveWeek(get(), null), notice: null }),
   stepMinute: () => {
     const state = get();
     if (!state.live || state.live.finished || state.live.paused) return;
+    if ((state.live.stage ?? "live") !== "live") return;
     const prev = state.live;
     const next = stepMatch(state.live, state);
-    if ((next.minute === 45 || next.minute === 105) && next.period !== "pens") {
+    if (next.stage === "ht-talk" || next.stage === "ht-changes") {
+      next.paused = true;
+    }
+    if ((next.minute === 105) && next.period !== "pens" && next.stage === "live") {
       next.paused = true;
       whistleNoise();
     }
@@ -356,6 +503,7 @@ export const useGame = create<Store>((set, get) => ({
     if (next.period === "pens" && prev.period !== "pens") whistleNoise();
     const scored = next.homeScore !== prev.homeScore || next.awayScore !== prev.awayScore;
     const carded = next.log.length > prev.log.length && next.log[next.log.length - 1]?.kind === "card";
+    const sceneKind = next.scene?.kind;
     const penGoal =
       next.period === "pens" &&
       next.penKicks.length > prev.penKicks.length &&
@@ -364,9 +512,28 @@ export const useGame = create<Store>((set, get) => ({
     if (scored || penGoal) {
       goalNoise();
       bumpCrowd(1.2);
-    } else if (carded) cardNoise();
+    } else if (sceneKind === "foul" || sceneKind === "offside" || sceneKind === "penalty") {
+      foulWhistle();
+    } else if (sceneKind === "freekick") {
+      foulWhistle();
+      bootNoise();
+    } else if (carded || sceneKind === "card") {
+      cardNoise();
+    } else if (
+      sceneKind === "shot" ||
+      sceneKind === "cross" ||
+      sceneKind === "corner" ||
+      sceneKind === "miss" ||
+      sceneKind === "throwin" ||
+      sceneKind === "kickoff"
+    ) {
+      bootNoise();
+    } else if (sceneKind === "save") {
+      bootNoise();
+      bumpCrowd(0.4);
+    }
     if (next.finished) {
-      whistleNoise();
+      whistleNoise(true);
       stopCrowd();
     }
   },
@@ -390,10 +557,12 @@ export const useGame = create<Store>((set, get) => ({
     const state = get();
     if (!state.live) return;
     stopCrowd();
+    if (!get().muted) ensureTheme();
     set({ ...resolveWeek(state, state.live), notice: null });
   },
   leaveReport: () => {
     const state = get();
+    if (!get().muted) ensureTheme();
     if (state.review && state.weekIndex >= state.weeks.length) set({ phase: "season" });
     else set({ phase: "hub", report: null, screen: "dash" });
   },
@@ -431,10 +600,11 @@ export const useGame = create<Store>((set, get) => ({
   },
   setTickets: (price) => {
     const state = get();
-    const p = Math.max(3, Math.min(7, Math.round(price)));
+    const p = Math.max(4, Math.min(80, Math.round(price)));
     const rest = state.newsQueue.slice(1);
+    const fair = state.tier === 1 ? 45 : state.tier === 2 ? 28 : state.tier === 3 ? 22 : state.tier === 4 ? 16 : 12;
     const mood =
-      p <= 4 ? "The terrace loves the cheap tickets." : p >= 7 ? "Grumbles about the gate price." : "Ticket prices feel fair.";
+      p < fair - 3 ? "The terrace loves the cheap tickets." : p > fair + 4 ? "Grumbles about the gate price. Expect a thinner crowd." : "Ticket prices feel fair.";
     const react = {
       id: `ticket-react-${state.season}`,
       kind: "continue" as const,
@@ -444,9 +614,25 @@ export const useGame = create<Store>((set, get) => ({
     };
     set({
       ticketPrice: p,
-      fans: Math.max(8, Math.min(99, state.fans + (p <= 4 ? 2 : p >= 7 ? -2 : 0))),
+      fans: Math.max(8, Math.min(99, state.fans + (p < fair - 3 ? 3 : p > fair + 4 ? -3 : 0))),
       newsQueue: [react, ...rest],
       notice: `Tickets set to £${p}.`,
+    });
+  },
+  instructManager: (patch) => {
+    const state = get();
+    const manager = { ...state.manager, ...patch };
+    set({
+      manager,
+      philosophy: manager.style,
+      formation: manager.formation,
+      notice: `${manager.name} will set up ${manager.formation}, ${manager.style}.`,
+    });
+  },
+  setTransferFocus: (pos) => {
+    set({
+      transferFocus: pos,
+      notice: pos ? `The manager will look for a ${pos}.` : "The manager can sign any position.",
     });
   },
   setWinBonus: (pct) => {
@@ -468,16 +654,69 @@ export const useGame = create<Store>((set, get) => ({
       notice: `Win bonus ${pct}%.`,
     });
   },
+  answerBid: (accept) => {
+    const state = get();
+    const card = state.newsQueue[0];
+    if (!card || card.kind !== "bid") {
+      get().advanceNews();
+      return;
+    }
+    const rest = state.newsQueue.slice(1);
+    if (accept) {
+      const priced = acceptOffer({ ...state, offer: { playerId: card.playerId, fee: card.fee, from: card.from }, newsQueue: rest });
+      set({ ...priced.save, newsQueue: rest, notice: priced.notice });
+      return;
+    }
+    set({
+      ...state,
+      offer: null,
+      newsQueue: rest,
+      notice: card.keep ? `${card.from} are told no. The manager is relieved.` : `Bid from ${card.from} rejected.`,
+    });
+  },
+  answerContract: (wage, years) => {
+    const state = get();
+    const card = state.newsQueue[0];
+    if (!card || card.kind !== "contract") {
+      get().advanceNews();
+      return;
+    }
+    const rest = state.newsQueue.slice(1);
+    const priced = offerContract({ ...state, newsQueue: rest }, card.playerId, wage, years);
+    set({ ...priced.save, newsQueue: rest, notice: priced.notice });
+  },
+  rejectContract: () => {
+    const state = get();
+    const card = state.newsQueue[0];
+    const rest = state.newsQueue.slice(1);
+    const name = card?.kind === "contract" ? state.players.find((p) => p.id === card.playerId)?.name : null;
+    set({
+      newsQueue: rest,
+      notice: name ? `No new deal for ${name}. The manager will try again later.` : "Contract suggestion rejected.",
+    });
+  },
   toggleMute: () => {
     const muted = !get().muted;
     setMuted(muted);
     const live = get().live;
-    if (muted) stopCrowd();
-    else if (get().phase === "match" && live && !live.finished) {
+    if (muted) {
+      stopCrowd();
+      stopTheme();
+    } else {
       unlockAudio();
-      startCrowd();
+      if (get().phase === "match" && live && !live.finished) startCrowd();
+      else startTheme();
     }
     set({ muted });
+  },
+  setCurrency: (currency) => {
+    const next = currency === "EUR" || currency === "USD" ? currency : "GBP";
+    setDisplayCurrency(next);
+    set({ currency: next, notice: `Currency set to ${next}.` });
+  },
+  deleteSlot: (id) => {
+    clearSlot(id);
+    set({ notice: `Career slot ${id} deleted.` });
   },
   stashSlot: (id, label) => {
     const state = get();
@@ -491,9 +730,13 @@ export const useGame = create<Store>((set, get) => ({
       set({ notice: "That slot is empty." });
       return;
     }
-    setMuted(!!save.muted);
+    syncPrefs(save);
     writeActive(save);
     set({ ...save, booted: true, phase: "hub", screen: "dash", notice: `Loaded ${save.clubs.find((c) => c.id === save.userClubId)?.name ?? "career"}.` });
+    if (!save.muted) {
+      unlockAudio();
+      ensureTheme();
+    }
   },
   exportCareer: () => {
     const state = get();
@@ -506,8 +749,12 @@ export const useGame = create<Store>((set, get) => ({
       set({ notice: "That file is not a Tyrone save." });
       return;
     }
-    setMuted(!!save.muted);
+    syncPrefs(save);
     writeActive(save);
     set({ ...save, booted: true, phase: "hub", screen: "dash", notice: "Career imported." });
+    if (!save.muted) {
+      unlockAudio();
+      ensureTheme();
+    }
   },
 }));
